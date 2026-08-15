@@ -205,16 +205,60 @@
 
       const tdActions = el('td', 'col-actions');
       const rowActions = el('div', 'row-actions');
+
+      const reorderGroup = el('div', 'reorder-group');
+      const upBtn = el('button', 'reorder-btn', '↑');
+      upBtn.setAttribute('data-move-up', String(i));
+      upBtn.title = '上移';
+      const downBtn = el('button', 'reorder-btn', '↓');
+      downBtn.setAttribute('data-move-down', String(i));
+      downBtn.title = '下移';
+
+      const isLast = i === rules.length - 1;
+      const belowIsCatchall =
+        i + 1 < rules.length && (rules[i + 1].prefix == null ? '' : rules[i + 1].prefix) === '';
+      if (i === 0 || catchall) upBtn.disabled = true;
+      if (isLast || catchall || belowIsCatchall) downBtn.disabled = true;
+      reorderGroup.append(upBtn, downBtn);
+
       const editBtn = el('button', 'link-btn', '编辑');
       editBtn.setAttribute('data-edit', String(i));
       const delBtn = el('button', 'link-btn danger', '删除');
       delBtn.setAttribute('data-delete', String(i));
-      rowActions.append(editBtn, delBtn);
+      rowActions.append(reorderGroup, editBtn, delBtn);
       tdActions.appendChild(rowActions);
 
       tr.append(tdPrefix, tdTarget, tdProxy, tdActions);
       tbody.appendChild(tr);
     });
+  }
+
+  function normalizeRule(r) {
+    return {
+      prefix: r.prefix == null ? '' : r.prefix,
+      target: r.target == null ? '' : r.target,
+      proxyServer: r.proxyServer || null,
+    };
+  }
+
+  async function reorderRule(index, dir) {
+    const j = index + dir;
+    if (j < 0 || j >= currentRules.length) return;
+
+    const tmp = currentRules[index];
+    currentRules[index] = currentRules[j];
+    currentRules[j] = tmp;
+    renderRules(currentRules);
+
+    const list = currentRules.map(normalizeRule);
+    try {
+      await Api.replaceAll(list);
+      toast('已调整顺序', 'success');
+      await loadRules();
+    } catch (err) {
+      toast(friendlyError(err), 'error');
+      await loadRules();
+    }
   }
 
   function setHealth(stateName, text) {
@@ -308,6 +352,17 @@
     document.getElementById('f-prefix').value = mode === 'edit' ? (rule.prefix == null ? '' : rule.prefix) : '';
     document.getElementById('f-target').value = mode === 'edit' ? (rule.target == null ? '' : rule.target) : '';
     document.getElementById('f-proxy').value = mode === 'edit' ? (rule.proxyServer || '') : '';
+    document.getElementById('f-index').value = '';
+
+    const idxHint = document.getElementById('f-index-hint');
+    if (mode === 'edit') {
+      const i = currentRules.findIndex(
+        (r) => (r.prefix == null ? '' : r.prefix).toLowerCase() === editingPrefix.toLowerCase()
+      );
+      idxHint.textContent = '当前位置：第 ' + (i + 1) + ' 位。填数字可移动；留空 = 保持原位。';
+    } else {
+      idxHint.textContent = '1-based，对应左侧 # 列；留空 = 追加到末尾。空 prefix（catch-all）固定末尾。';
+    }
 
     openModal('rule-modal');
     document.getElementById('f-prefix').focus();
@@ -331,10 +386,12 @@
     e.preventDefault();
     const errEl = document.getElementById('rule-form-error');
     const f = readRuleForm();
+    const rawIdx = document.getElementById('f-index').value.trim();
+    const wantIndex = rawIdx === '' ? null : parseInt(rawIdx, 10);
 
-    // Empty prefix = catch-all → must go through PUT (full replace).
-    if (f.prefix === '') {
-      await saveCatchAll(f, errEl);
+    // Empty prefix (catch-all) or an explicit index → full-list PUT (reorder).
+    if (f.prefix === '' || (wantIndex !== null && Number.isFinite(wantIndex))) {
+      await saveWithOrder(f, wantIndex, errEl);
       return;
     }
 
@@ -359,31 +416,39 @@
     }
   }
 
-  async function saveCatchAll(f, errEl) {
+  async function saveWithOrder(f, wantIndex, errEl) {
     setSubmitBusy(true);
     try {
-      // Fetch the current merged view, upsert the empty-prefix rule, then PUT it back.
-      // NOTE: PUT replaces runtime overrides only; base rules remain base.
-      const { data } = await Api.listMappings();
-      const rules = (Array.isArray(data) ? data : []).map((r) => ({
-        prefix: r.prefix == null ? '' : r.prefix,
-        target: r.target == null ? '' : r.target,
-        proxyServer: r.proxyServer || null,
-      }));
+      const list = currentRules.map(normalizeRule);
 
-      // If this was a rename from a non-empty prefix, drop the old prefix from the runtime list.
-      if (editingPrefix !== null && editingPrefix !== '') {
-        const i = rules.findIndex((r) => r.prefix.toLowerCase() === editingPrefix.toLowerCase());
-        if (i >= 0) rules.splice(i, 1);
+      // Editing: drop the original prefix so we can reposition cleanly.
+      if (editingPrefix !== null) {
+        const i = list.findIndex((r) => r.prefix.toLowerCase() === editingPrefix.toLowerCase());
+        if (i >= 0) list.splice(i, 1);
       }
 
-      const idx = rules.findIndex((r) => r.prefix === '');
-      const entry = { prefix: '', target: f.target, proxyServer: f.proxyServer };
-      if (idx >= 0) rules[idx] = entry;
-      else rules.push(entry);
+      const entry = { prefix: f.prefix, target: f.target, proxyServer: f.proxyServer };
+      let pos;
+      if (f.prefix === '') {
+        pos = list.length; // catch-all is pinned to the end
+      } else if (wantIndex !== null) {
+        pos = Math.min(Math.max(wantIndex - 1, 0), list.length);
+      } else {
+        pos = list.length; // append
+      }
+      list.splice(pos, 0, entry);
 
-      await Api.replaceAll(rules);
-      toast('空 prefix（catch-all）已通过 PUT 全量提交，请确保它排在列表最后。', 'warn');
+      await Api.replaceAll(list);
+
+      let msg;
+      if (f.prefix === '') {
+        msg = '已保存 catch-all（固定末尾）';
+      } else if (wantIndex !== null) {
+        msg = '已保存「' + f.prefix + '」到第 ' + (pos + 1) + ' 位';
+      } else {
+        msg = (editingPrefix === null ? '已新增' : '已更新') + '「' + f.prefix + '」';
+      }
+      toast(msg, 'success');
       closeModal('rule-modal');
       await loadRules();
     } catch (err) {
@@ -508,6 +573,57 @@
     });
   }
 
+  /* ── harden / export ──────────────────────────────────── */
+  function buildHardenSnippet() {
+    const rules = currentRules.map((r) => {
+      const out = {
+        Prefix: r.prefix == null ? '' : r.prefix,
+        Target: r.target == null ? '' : r.target,
+      };
+      if (r.proxyServer) out.ProxyServer = r.proxyServer;
+      return out;
+    });
+    return JSON.stringify({ ModelMapping: { Rules: rules } }, null, 2);
+  }
+
+  function openHardenModal() {
+    if (!currentRules.length) {
+      toast('当前没有可固化的规则', 'warn');
+      return;
+    }
+    document.getElementById('harden-output').value = buildHardenSnippet();
+    openModal('harden-modal');
+  }
+
+  function downloadHarden() {
+    const text = document.getElementById('harden-output').value;
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'model-mapping-rules.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function copyHarden() {
+    const ta = document.getElementById('harden-output');
+    try {
+      await navigator.clipboard.writeText(ta.value);
+      toast('已复制到剪贴板', 'success');
+    } catch (e) {
+      ta.select();
+      try {
+        document.execCommand('copy');
+        toast('已复制到剪贴板', 'success');
+      } catch (e2) {
+        toast('复制失败，请手动选择复制', 'error');
+      }
+    }
+  }
+
   /* ── event wiring ─────────────────────────────────────── */
   function init() {
     renderGatewaySelect();
@@ -533,6 +649,9 @@
 
     document.getElementById('refresh-btn').addEventListener('click', loadAll);
     document.getElementById('reset-btn').addEventListener('click', handleResetAll);
+    document.getElementById('harden-btn').addEventListener('click', openHardenModal);
+    document.getElementById('harden-copy').addEventListener('click', copyHarden);
+    document.getElementById('harden-download').addEventListener('click', downloadHarden);
 
     document.getElementById('confirm-ok').addEventListener('click', () => {
       closeModal('confirm-modal');
@@ -545,6 +664,12 @@
     document.addEventListener('click', (e) => {
       const closeBtn = e.target.closest('[data-close]');
       if (closeBtn) { closeModal(closeBtn.getAttribute('data-close')); return; }
+
+      const upBtn = e.target.closest('[data-move-up]');
+      if (upBtn) { reorderRule(+upBtn.getAttribute('data-move-up'), -1); return; }
+
+      const downBtn = e.target.closest('[data-move-down]');
+      if (downBtn) { reorderRule(+downBtn.getAttribute('data-move-down'), 1); return; }
 
       const editBtn = e.target.closest('[data-edit]');
       if (editBtn) {

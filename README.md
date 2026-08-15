@@ -57,13 +57,31 @@
 - 网关列表（名称 / Base URL / API Key）保存在浏览器 `localStorage`（key：`aiGatewayAdmin.v1`），不会上传。
 - 每个网关独立保存自己的 `x-admin-key`；切换网关即切换目标后端。
 
+## 重排规则
+
+规则按 first-match-wins 自上而下匹配，顺序即优先级。页面提供两种重排方式：
+
+- **上移 / 下移按钮**：每行操作列的 `↑` / `↓` 立即调整相邻位置并全量提交。
+- **edit modal 的「位置 INDEX」字段**：填 1-based 位置（对应 `#` 列）后保存，规则会移动到该位置；留空 = 保持原位 / 追加到末尾。
+
+重排会把**完整有效列表**通过 `PUT /admin/mappings` 提交，因此当前所有规则（含 base 默认）都会被「提升」为 runtime 覆盖。空 prefix（catch-all）始终固定在末尾。
+
+## 固化配置（harden）
+
+把当前有效规则固化进 `appsettings.json` 成为 base 默认：
+
+1. 点面板右上角「固化配置」，生成 `ModelMapping:Rules` 片段。
+2. 复制或下载 `.json`，粘贴进 `appsettings.json` 的 `ModelMapping` 段。
+3. 重启网关；随后可在面板「重置全部覆盖」清空 runtime，让 base 成为唯一来源。
+
 ## 行为说明与已知限制
 
 - **target 可空**：空 `target` 表示"匹配该 prefix 但保持原模型名不变（不重写）"，`PATCH` / `PUT` 行为一致，非必填。
 - **prefix 含 `/`**：请求路径已做 `encodeURIComponent`，无需手动处理。
-- **空 prefix（catch-all）**：`PATCH` 路由不到，前端改走 `PUT` 全量提交；请确保 catch-all 排在列表末尾（后端 first-match-wins）。
+- **空 prefix（catch-all）**：`PATCH` 路由不到，前端改走 `PUT` 全量提交；页面强制 catch-all 排在列表末尾（后端 first-match-wins）。
 - **区分 base vs runtime**：后端 `GET /admin/mappings` 只返回合并视图，不标注来源。删除某规则后若它仍在列表里，说明它来自 `appsettings.json` 默认（已回退），页面会提示。
-- **PUT 是替换而非合并**：仅「重置全部覆盖」与「空 prefix」场景使用，单条编辑走 `PATCH`。
+- **重排 / 填 index 会全量 PUT**：等于把当前完整列表（含 base）写入 runtime 覆盖；之后若再改 `appsettings.json` 的同名 base 规则会被 runtime 覆盖挡住，需「固化 + 重置全部覆盖」收口。
+- **PUT 是替换而非合并**：重排、「重置全部覆盖」与「空 prefix」场景使用；单条普通编辑仍走 `PATCH`。
 
 ## 对接的后端契约
 
