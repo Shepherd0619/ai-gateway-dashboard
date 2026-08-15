@@ -30,12 +30,13 @@
         </div>
       </div>
 
-      <div class="health" id="health" title="上游健康状态">
+      <div class="health" id="health" title="点击查看代理健康矩阵">
         <span class="led led-idle" id="health-led"></span>
         <div class="health-meta">
-          <span class="health-label">UPSTREAM</span>
+          <span class="health-label">直连</span>
           <span class="health-text" id="health-text">—</span>
         </div>
+        <span class="health-chevron" aria-hidden="true">▾</span>
       </div>
 
       <button id="refresh-btn" class="btn btn-primary" title="重新加载规则与健康状态">刷新</button>
@@ -200,6 +201,39 @@
         <button type="button" class="btn btn-ghost" data-close="harden-modal">关闭</button>
         <button type="button" class="btn btn-ghost" id="harden-copy">复制</button>
         <button type="button" class="btn btn-primary" id="harden-download">下载 .json</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ PROXY HEALTH MODAL ══════════════ -->
+  <div class="modal" id="proxy-modal" hidden>
+    <div class="modal-backdrop" data-close="proxy-modal"></div>
+    <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="proxy-modal-title">
+      <div class="modal-head">
+        <h3 id="proxy-modal-title">代理健康</h3>
+        <button class="modal-close" data-close="proxy-modal" aria-label="关闭">×</button>
+      </div>
+      <div class="proxy-body">
+        <table class="rules-table proxy-table">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th class="col-status">状态</th>
+              <th class="col-latency">延迟</th>
+              <th class="col-error">错误</th>
+            </tr>
+          </thead>
+          <tbody id="proxy-body"></tbody>
+        </table>
+        <div class="empty" id="proxy-empty" hidden>
+          <div class="empty-glyph" aria-hidden="true">∅</div>
+          <p class="empty-title">无代理可测试</p>
+          <p class="empty-sub" id="proxy-empty-sub"></p>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="proxy-modal">关闭</button>
+        <button type="button" class="btn btn-primary" id="proxy-refresh-btn">重新测试</button>
       </div>
     </div>
   </div>

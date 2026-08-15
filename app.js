@@ -111,6 +111,7 @@
   const Api = {
     listMappings: () => api('GET', '/admin/mappings'),
     health: () => api('GET', '/health', { requireKey: false }),
+    proxyHealth: () => api('GET', '/admin/proxy-health'),
     upsert: (prefix, target, proxyServer) =>
       api('PATCH', '/admin/mappings/' + encodeURIComponent(prefix), {
         body: { target: target, proxyServer: proxyServer },
@@ -287,6 +288,93 @@
       }
     } catch (e) {
       setHealth('bad', '不可达');
+    }
+  }
+
+  function proxyStatusLed(status) {
+    return el('span', 'led led-' + (status === 'healthy' ? 'ok' : status === 'idle' ? 'idle' : 'bad'));
+  }
+
+  function renderProxyHealth(rows, emptyMessage) {
+    const tbody = document.getElementById('proxy-body');
+    const empty = document.getElementById('proxy-empty');
+    tbody.replaceChildren();
+
+    if (!rows || rows.length === 0) {
+      empty.hidden = false;
+      document.getElementById('proxy-empty-sub').textContent =
+        emptyMessage || '后端未配置任何 ProxyServer（ProxyServers 段为空）。';
+      return;
+    }
+
+    empty.hidden = true;
+    rows.forEach((r) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', 'cell-mono', r.name));
+
+      const tdStatus = el('td', 'col-status');
+      const wrap = el('span', 'proxy-status');
+      wrap.appendChild(proxyStatusLed(r.status));
+      wrap.appendChild(el('span', null, r.status === 'healthy' ? 'HEALTHY' : 'UNHEALTHY'));
+      tdStatus.appendChild(wrap);
+      tr.appendChild(tdStatus);
+
+      tr.appendChild(el('td', 'col-latency cell-mono', r.latency_ms != null ? r.latency_ms + 'ms' : '—'));
+
+      const tdErr = el('td', 'col-error');
+      tdErr.textContent = r.error ? r.error : '—';
+      if (r.error) tdErr.classList.add('proxy-err');
+      tr.appendChild(tdErr);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function loadProxyHealth() {
+    const tbody = document.getElementById('proxy-body');
+    const empty = document.getElementById('proxy-empty');
+    empty.hidden = true;
+    tbody.replaceChildren();
+
+    const tr = el('tr');
+    const td = el('td', 'proxy-loading');
+    td.colSpan = 4;
+    td.textContent = '测试中…';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+
+    const gw = activeGateway();
+    if (!gw) { renderProxyHealth([], '请先选择网关。'); return; }
+
+    const [direct, proxies] = await Promise.all([
+      Api.health().then(({ data }) => ({
+        name: '直连（direct）',
+        status: data && data.status === 'healthy' ? 'healthy' : 'unhealthy',
+        latency_ms: data ? data.latency_ms : null,
+        error: data && data.error ? data.error : null,
+      })).catch((err) => ({
+        name: '直连（direct）',
+        status: 'unhealthy',
+        latency_ms: null,
+        error: friendlyError(err),
+      })),
+      Api.proxyHealth().then(({ data }) => (Array.isArray(data) ? data : []))
+        .catch((err) => [{
+          name: '代理',
+          status: 'unhealthy',
+          latency_ms: null,
+          error: friendlyError(err),
+        }]),
+    ]);
+
+    renderProxyHealth([direct, ...proxies]);
+
+    if (proxies.length === 0) {
+      const hintTr = el('tr');
+      const hintTd = el('td', 'proxy-empty-hint', '无代理可测试 · 后端未配置任何 ProxyServer（ProxyServers 段为空）。');
+      hintTd.colSpan = 4;
+      hintTr.appendChild(hintTd);
+      document.getElementById('proxy-body').appendChild(hintTr);
     }
   }
 
@@ -684,6 +772,11 @@
     document.getElementById('rule-form').addEventListener('submit', handleRuleSubmit);
 
     document.getElementById('refresh-btn').addEventListener('click', loadAll);
+    document.getElementById('health').addEventListener('click', () => {
+      openModal('proxy-modal');
+      loadProxyHealth();
+    });
+    document.getElementById('proxy-refresh-btn').addEventListener('click', loadProxyHealth);
     document.getElementById('reset-btn').addEventListener('click', handleResetAll);
     document.getElementById('harden-btn').addEventListener('click', openHardenModal);
     document.getElementById('harden-copy').addEventListener('click', copyHarden);
@@ -748,7 +841,7 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        ['rule-modal', 'gateway-modal', 'confirm-modal'].forEach(closeModal);
+        ['rule-modal', 'gateway-modal', 'confirm-modal', 'proxy-modal'].forEach(closeModal);
       }
     });
 
