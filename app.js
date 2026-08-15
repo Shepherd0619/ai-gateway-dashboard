@@ -663,10 +663,6 @@
   }
 
   /* ── harden / export ──────────────────────────────────── */
-  function yamlQuote(s) {
-    return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-  }
-
   function buildHardenSnippet() {
     const rules = currentRules.map((r) => {
       const out = {
@@ -682,13 +678,12 @@
   function buildHardenEnvSnippet() {
     const lines = ['environment:'];
     currentRules.forEach((r, i) => {
-      lines.push('  ModelMapping__Rules__' + i + '__Prefix: ' + yamlQuote(r.prefix == null ? '' : r.prefix));
-      if (r.target != null && r.target !== '') {
-        lines.push('  ModelMapping__Rules__' + i + '__Target: ' + yamlQuote(r.target));
-      }
-      if (r.proxyServer) {
-        lines.push('  ModelMapping__Rules__' + i + '__ProxyServer: ' + yamlQuote(r.proxyServer));
-      }
+      const prefix = r.prefix == null ? '' : r.prefix;
+      const target = r.target == null ? '' : r.target;
+      const proxyServer = r.proxyServer == null ? '' : r.proxyServer;
+      lines.push('      - ModelMapping__Rules__' + i + '__Prefix=' + prefix);
+      lines.push('      - ModelMapping__Rules__' + i + '__Target=' + target);
+      lines.push('      - ModelMapping__Rules__' + i + '__ProxyServer=' + proxyServer);
     });
     return lines.join('\n');
   }
