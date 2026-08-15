@@ -188,7 +188,12 @@
         <button class="modal-close" data-close="harden-modal" aria-label="关闭">×</button>
       </div>
       <div class="harden-body">
-        <p class="harden-hint">把下面这段粘贴进 <code>appsettings.json</code> 的 <code>ModelMapping</code> 段，重启网关后即为 base 默认。之后可在主面板「重置全部覆盖」清空 runtime。</p>
+        <p class="harden-hint" id="harden-hint-json">把下面这段粘贴进 <code>appsettings.json</code> 的 <code>ModelMapping</code> 段，重启网关后即为 base 默认。之后可在主面板「重置全部覆盖」清空 runtime。</p>
+        <p class="harden-hint" id="harden-hint-env" hidden>把下面这段粘贴进 docker-compose 服务的 <code>environment:</code> 段。环境变量按 index 覆盖 <code>ModelMapping:Rules</code>，重启容器生效。</p>
+        <div class="seg" role="tablist" aria-label="配置格式">
+          <button type="button" class="seg-btn active" id="harden-fmt-json" aria-pressed="true">appsettings.json</button>
+          <button type="button" class="seg-btn" id="harden-fmt-env" aria-pressed="false">docker-compose env</button>
+        </div>
         <textarea id="harden-output" class="harden-output" readonly spellcheck="false" aria-label="导出的配置片段"></textarea>
       </div>
       <div class="modal-actions">

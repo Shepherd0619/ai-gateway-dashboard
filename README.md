@@ -68,11 +68,12 @@
 
 ## 固化配置（harden）
 
-把当前有效规则固化进 `appsettings.json` 成为 base 默认：
+把当前有效规则固化成为 base 默认。固化弹窗顶部可切换两种导出格式：
 
-1. 点面板右上角「固化配置」，生成 `ModelMapping:Rules` 片段。
-2. 复制或下载 `.json`，粘贴进 `appsettings.json` 的 `ModelMapping` 段。
-3. 重启网关；随后可在面板「重置全部覆盖」清空 runtime，让 base 成为唯一来源。
+- **appsettings.json**：生成 `ModelMapping:Rules` 片段，复制或下载 `.json`，粘贴进 `appsettings.json` 的 `ModelMapping` 段。
+- **docker-compose env**：生成 `environment:` 环境变量片段（`ModelMapping__Rules__{i}__Prefix/Target/ProxyServer`），粘贴进服务的 `environment:` 段。环境变量按 index 覆盖 `ModelMapping:Rules`。
+
+固化后重启网关/容器；随后可在面板「重置全部覆盖」清空 runtime，让 base 成为唯一来源。
 
 ## 行为说明与已知限制
 

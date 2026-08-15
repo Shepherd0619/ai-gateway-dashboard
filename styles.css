@@ -485,6 +485,29 @@ form { padding: 20px; }
 }
 .harden-output:focus { border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-dim); }
 
+/* ── harden format switcher ── */
+.seg {
+  display: inline-flex;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.seg-btn {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 7px 14px;
+  background: var(--panel);
+  color: var(--muted);
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.seg-btn + .seg-btn { border-left: 1px solid var(--border-strong); }
+.seg-btn:hover { color: var(--text); }
+.seg-btn.active { background: var(--amber-dim); color: var(--amber); }
+
 /* ── gateway manager ── */
 .gw-list { padding: 16px 20px 0; display: flex; flex-direction: column; gap: 10px; }
 

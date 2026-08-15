@@ -14,6 +14,7 @@
   let editingPrefix = null;   // non-null => edit mode (original prefix)
   let editingGwId = null;     // non-null => editing an existing gateway
   let confirmCallback = null;
+  let hardenFormat = 'json';  // 'json' | 'env'
 
   function loadState() {
     try {
@@ -574,6 +575,10 @@
   }
 
   /* ── harden / export ──────────────────────────────────── */
+  function yamlQuote(s) {
+    return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+
   function buildHardenSnippet() {
     const rules = currentRules.map((r) => {
       const out = {
@@ -586,22 +591,53 @@
     return JSON.stringify({ ModelMapping: { Rules: rules } }, null, 2);
   }
 
+  function buildHardenEnvSnippet() {
+    const lines = ['environment:'];
+    currentRules.forEach((r, i) => {
+      lines.push('  ModelMapping__Rules__' + i + '__Prefix: ' + yamlQuote(r.prefix == null ? '' : r.prefix));
+      if (r.target != null && r.target !== '') {
+        lines.push('  ModelMapping__Rules__' + i + '__Target: ' + yamlQuote(r.target));
+      }
+      if (r.proxyServer) {
+        lines.push('  ModelMapping__Rules__' + i + '__ProxyServer: ' + yamlQuote(r.proxyServer));
+      }
+    });
+    return lines.join('\n');
+  }
+
+  function renderHarden() {
+    const isJson = hardenFormat === 'json';
+    document.getElementById('harden-output').value = isJson ? buildHardenSnippet() : buildHardenEnvSnippet();
+    document.getElementById('harden-hint-json').hidden = !isJson;
+    document.getElementById('harden-hint-env').hidden = isJson;
+
+    const jsonBtn = document.getElementById('harden-fmt-json');
+    const envBtn = document.getElementById('harden-fmt-env');
+    jsonBtn.classList.toggle('active', isJson);
+    jsonBtn.setAttribute('aria-pressed', String(isJson));
+    envBtn.classList.toggle('active', !isJson);
+    envBtn.setAttribute('aria-pressed', String(!isJson));
+
+    document.getElementById('harden-download').textContent = isJson ? '下载 .json' : '下载 .yml';
+  }
+
   function openHardenModal() {
     if (!currentRules.length) {
       toast('当前没有可固化的规则', 'warn');
       return;
     }
-    document.getElementById('harden-output').value = buildHardenSnippet();
+    renderHarden();
     openModal('harden-modal');
   }
 
   function downloadHarden() {
+    const isJson = hardenFormat === 'json';
     const text = document.getElementById('harden-output').value;
-    const blob = new Blob([text], { type: 'application/json' });
+    const blob = new Blob([text], { type: isJson ? 'application/json' : 'text/yaml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'model-mapping-rules.json';
+    a.download = isJson ? 'model-mapping-rules.json' : 'model-mapping-rules.env.yml';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -652,6 +688,14 @@
     document.getElementById('harden-btn').addEventListener('click', openHardenModal);
     document.getElementById('harden-copy').addEventListener('click', copyHarden);
     document.getElementById('harden-download').addEventListener('click', downloadHarden);
+    document.getElementById('harden-fmt-json').addEventListener('click', () => {
+      hardenFormat = 'json';
+      renderHarden();
+    });
+    document.getElementById('harden-fmt-env').addEventListener('click', () => {
+      hardenFormat = 'env';
+      renderHarden();
+    });
 
     document.getElementById('confirm-ok').addEventListener('click', () => {
       closeModal('confirm-modal');
