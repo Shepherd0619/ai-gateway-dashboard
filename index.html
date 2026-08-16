@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -25,21 +25,21 @@
       <div class="gw-field">
         <label class="field-label" for="gateway-select">GATEWAY</label>
         <div class="gw-control">
-          <select id="gateway-select" aria-label="当前网关"></select>
-          <button id="manage-gateways-btn" class="btn btn-ghost" title="管理网关列表">管理</button>
+          <select id="gateway-select" aria-label="Current gateway"></select>
+          <button id="manage-gateways-btn" class="btn btn-ghost" title="Manage gateway list">Manage</button>
         </div>
       </div>
 
-      <div class="health" id="health" title="点击查看代理健康矩阵">
+      <div class="health" id="health" title="Click to view proxy health matrix">
         <span class="led led-idle" id="health-led"></span>
         <div class="health-meta">
-          <span class="health-label">直连</span>
+          <span class="health-label">DIRECT</span>
           <span class="health-text" id="health-text">—</span>
         </div>
         <span class="health-chevron" aria-hidden="true">▾</span>
       </div>
 
-      <button id="refresh-btn" class="btn btn-primary" title="重新加载规则与健康状态">刷新</button>
+      <button id="refresh-btn" class="btn btn-primary" title="Reload rules and health status">Refresh</button>
     </div>
   </header>
 
@@ -48,13 +48,13 @@
     <section class="panel">
       <div class="panel-head">
         <div class="panel-title">
-          <h2>映射规则</h2>
-          <span class="panel-hint">FIRST-MATCH-WINS · 自上而下匹配</span>
+          <h2>Mapping Rules</h2>
+          <span class="panel-hint">FIRST-MATCH-WINS · top-to-bottom matching</span>
         </div>
         <div class="panel-actions">
-          <button id="harden-btn" class="btn btn-ghost" title="把当前有效规则导出为 appsettings 片段，用于固化到 base 配置">固化配置</button>
-          <button id="reset-btn" class="btn btn-danger-ghost" title="清空所有运行时覆盖，回退到 base 默认">重置全部覆盖</button>
-          <button id="add-btn" class="btn btn-primary">＋ 新增规则</button>
+          <button id="harden-btn" class="btn btn-ghost" title="Export the current effective rules as an appsettings snippet for the base configuration">Harden Configuration</button>
+          <button id="reset-btn" class="btn btn-danger-ghost" title="Clear all runtime overrides and fall back to base defaults">Reset All Overrides</button>
+          <button id="add-btn" class="btn btn-primary">＋ Add Rule</button>
         </div>
       </div>
 
@@ -66,7 +66,7 @@
               <th class="col-prefix">PREFIX</th>
               <th class="col-target">TARGET</th>
               <th class="col-proxy">PROXY</th>
-              <th class="col-actions">操作</th>
+              <th class="col-actions">ACTIONS</th>
             </tr>
           </thead>
           <tbody id="rules-body"></tbody>
@@ -74,14 +74,14 @@
 
         <div class="empty" id="empty-state" hidden>
           <div class="empty-glyph" aria-hidden="true">∅</div>
-          <p class="empty-title">暂无映射规则</p>
-          <p class="empty-sub" id="empty-sub">点击「新增规则」开始配置，或先在右上角选择 / 添加网关。</p>
+          <p class="empty-title">No Mapping Rules</p>
+          <p class="empty-sub" id="empty-sub">Click “Add Rule” to begin, or select / add a gateway in the top-right corner.</p>
         </div>
       </div>
 
       <footer class="panel-foot">
-        <span id="foot-status">未连接</span>
-        <span class="foot-note">规则即时生效 · 持久化至 mappings-runtime.json</span>
+        <span id="foot-status">Disconnected</span>
+        <span class="foot-note">Rules take effect immediately · persisted to mappings-runtime.json</span>
       </footer>
     </section>
 
@@ -92,12 +92,12 @@
           <span class="panel-hint">CLAUDE CODE SIGNATURE ROUTE</span>
         </div>
         <div class="panel-actions">
-          <button id="classifier-reset-btn" class="btn btn-ghost" hidden>恢复默认</button>
-          <button id="classifier-edit-btn" class="btn btn-primary">编辑</button>
+          <button id="classifier-reset-btn" class="btn btn-ghost" hidden>Restore Default</button>
+          <button id="classifier-edit-btn" class="btn btn-primary">Edit</button>
         </div>
       </div>
       <div class="classifier-body" id="classifier-body">
-        <div class="classifier-loading">加载中…</div>
+        <div class="classifier-loading">Loading…</div>
       </div>
     </section>
   </main>
@@ -107,62 +107,62 @@
     <div class="modal-backdrop" data-close="classifier-modal"></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="classifier-modal-title">
       <div class="modal-head">
-        <h3 id="classifier-modal-title">编辑 Auto Mode Classifier</h3>
-        <button class="modal-close" data-close="classifier-modal" aria-label="关闭">×</button>
+        <h3 id="classifier-modal-title">Edit Auto Mode Classifier</h3>
+        <button class="modal-close" data-close="classifier-modal" aria-label="Close">×</button>
       </div>
       <form id="classifier-form" novalidate>
         <div class="form-field">
           <label class="field-label" for="f-classifier-model">INPUT MODEL</label>
           <input id="f-classifier-model" type="text" autocomplete="off" spellcheck="false"
-                 placeholder="例如 deepseek/deepseek-v4-flash" />
-          <p class="field-hint">可填写任意模型名。留空会关闭 classifier 专用路由，并回到普通 ModelMapping。</p>
+                 placeholder="e.g. deepseek/deepseek-v4-flash" />
+          <p class="field-hint">Enter any model name. Leave blank to disable the classifier-specific route and return to regular ModelMapping.</p>
         </div>
         <div class="form-error" id="classifier-form-error" hidden></div>
         <div class="modal-actions">
-          <button type="button" class="btn btn-ghost" data-close="classifier-modal">取消</button>
-          <button type="submit" class="btn btn-primary" id="classifier-submit">保存</button>
+          <button type="button" class="btn btn-ghost" data-close="classifier-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="classifier-submit">Save</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- ══════════════ RULE MODAL (新增 / 编辑) ══════════════ -->
+  <!-- ══════════════ RULE MODAL (Add / Edit) ══════════════ -->
   <div class="modal" id="rule-modal" hidden>
     <div class="modal-backdrop" data-close="rule-modal"></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rule-modal-title">
       <div class="modal-head">
-        <h3 id="rule-modal-title">新增规则</h3>
-        <button class="modal-close" data-close="rule-modal" aria-label="关闭">×</button>
+        <h3 id="rule-modal-title">Add Rule</h3>
+        <button class="modal-close" data-close="rule-modal" aria-label="Close">×</button>
       </div>
       <form id="rule-form" novalidate>
         <div class="form-field">
           <label class="field-label" for="f-prefix">PREFIX <span class="req">*</span></label>
           <input id="f-prefix" name="prefix" type="text" autocomplete="off" spellcheck="false"
                  placeholder="claude-haiku" />
-          <p class="field-hint">模型名前缀，大小写不敏感；留空 = 匹配一切（catch-all，须放最后）。</p>
+          <p class="field-hint">Model name prefix, case-insensitive; leave blank to match everything (catch-all, must be last).</p>
         </div>
         <div class="form-field">
           <label class="field-label" for="f-target">TARGET</label>
           <input id="f-target" name="target" type="text" autocomplete="off" spellcheck="false"
-                 placeholder="deepseek/deepseek-v4-pro（留空 = 不重写）" />
-          <p class="field-hint">重写目标模型名；留空表示匹配该 prefix 但保持原模型名不变。</p>
+                 placeholder="deepseek/deepseek-v4-pro (leave blank = no rewrite)" />
+          <p class="field-hint">Target model name to rewrite; leave blank to match the prefix without changing the original model name.</p>
         </div>
         <div class="form-field">
           <label class="field-label" for="f-proxy">PROXY SERVER</label>
           <input id="f-proxy" name="proxyServer" type="text" autocomplete="off" spellcheck="false"
-                 placeholder="可选：SOCKS5 代理名" />
-          <p class="field-hint">须在 ProxyServers 配置中已定义，否则 400。</p>
+                 placeholder="Optional: SOCKS5 proxy name" />
+          <p class="field-hint">Must be defined in the ProxyServers configuration, otherwise the API returns 400.</p>
         </div>
         <div class="form-field">
-          <label class="field-label" for="f-index">位置 INDEX</label>
+          <label class="field-label" for="f-index">Position INDEX</label>
           <input id="f-index" name="index" type="number" min="1" step="1" autocomplete="off"
-                 inputmode="numeric" placeholder="留空 = 保持原位 / 追加到末尾" />
-          <p class="field-hint" id="f-index-hint">1-based，对应左侧 # 列；填数字则保存后移到该位置。空 prefix（catch-all）固定末尾。</p>
+                 inputmode="numeric" placeholder="Leave blank = keep position / append to end" />
+          <p class="field-hint" id="f-index-hint">1-based, corresponding to the # column; enter a number to move the rule there when saved. An empty prefix (catch-all) is always placed last.</p>
         </div>
         <div class="form-error" id="rule-form-error" hidden></div>
         <div class="modal-actions">
-          <button type="button" class="btn btn-ghost" data-close="rule-modal">取消</button>
-          <button type="submit" class="btn btn-primary" id="rule-submit">保存</button>
+          <button type="button" class="btn btn-ghost" data-close="rule-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="rule-submit">Save</button>
         </div>
       </form>
     </div>
@@ -173,8 +173,8 @@
     <div class="modal-backdrop" data-close="gateway-modal"></div>
     <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="gateway-modal-title">
       <div class="modal-head">
-        <h3 id="gateway-modal-title">管理网关</h3>
-        <button class="modal-close" data-close="gateway-modal" aria-label="关闭">×</button>
+        <h3 id="gateway-modal-title">Manage Gateways</h3>
+        <button class="modal-close" data-close="gateway-modal" aria-label="Close">×</button>
       </div>
 
       <div class="gw-list" id="gw-list"></div>
@@ -182,8 +182,8 @@
       <div class="gw-form" id="gw-form">
         <div class="gw-form-row">
           <div class="form-field">
-            <label class="field-label" for="g-name">名称</label>
-            <input id="g-name" type="text" autocomplete="off" placeholder="本地开发" />
+            <label class="field-label" for="g-name">Name</label>
+            <input id="g-name" type="text" autocomplete="off" placeholder="Local development" />
           </div>
           <div class="form-field gw-url">
             <label class="field-label" for="g-baseUrl">BASE URL</label>
@@ -197,8 +197,8 @@
         </div>
         <div class="form-error" id="gw-form-error" hidden></div>
         <div class="modal-actions">
-          <button type="button" class="btn btn-ghost" id="gw-cancel-edit" hidden>取消编辑</button>
-          <button type="button" class="btn btn-primary" id="gw-save">保存网关</button>
+          <button type="button" class="btn btn-ghost" id="gw-cancel-edit" hidden>Cancel Edit</button>
+          <button type="button" class="btn btn-primary" id="gw-save">Save Gateway</button>
         </div>
       </div>
     </div>
@@ -209,38 +209,38 @@
     <div class="modal-backdrop" data-close="confirm-modal"></div>
     <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
       <div class="modal-head">
-        <h3 id="confirm-title">确认操作</h3>
-        <button class="modal-close" data-close="confirm-modal" aria-label="关闭">×</button>
+        <h3 id="confirm-title">Confirm Action</h3>
+        <button class="modal-close" data-close="confirm-modal" aria-label="Close">×</button>
       </div>
       <p class="confirm-body" id="confirm-body"></p>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" data-close="confirm-modal">取消</button>
-        <button type="button" class="btn btn-danger" id="confirm-ok">确认</button>
+        <button type="button" class="btn btn-ghost" data-close="confirm-modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirm-ok">Confirm</button>
       </div>
     </div>
   </div>
 
-  <!-- ══════════════ HARDEN MODAL (导出 base 片段) ══════════════ -->
+  <!-- ══════════════ HARDEN MODAL (Export base snippet) ══════════════ -->
   <div class="modal" id="harden-modal" hidden>
     <div class="modal-backdrop" data-close="harden-modal"></div>
     <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="harden-title">
       <div class="modal-head">
-        <h3 id="harden-title">固化配置 · ModelMapping</h3>
-        <button class="modal-close" data-close="harden-modal" aria-label="关闭">×</button>
+        <h3 id="harden-title">Harden Configuration · ModelMapping</h3>
+        <button class="modal-close" data-close="harden-modal" aria-label="Close">×</button>
       </div>
       <div class="harden-body">
-        <p class="harden-hint" id="harden-hint-json">把下面完整配置粘贴进 <code>appsettings.json</code>。内容包含 <code>ModelMapping</code> 与 <code>Classifier</code>，重启网关后即为 base 默认。之后可在主面板「重置全部覆盖」清空 runtime。</p>
-        <p class="harden-hint" id="harden-hint-env" hidden>把下面完整片段粘贴进 docker-compose 服务的 <code>environment:</code> 段。内容包含 <code>ModelMapping__Rules__*</code> 与 <code>Classifier__TargetModel</code>，重启容器生效。</p>
-        <div class="seg" role="tablist" aria-label="配置格式">
+        <p class="harden-hint" id="harden-hint-json">Paste the complete configuration below into <code>appsettings.json</code>. It includes <code>ModelMapping</code> and <code>Classifier</code>. After restarting the gateway, it becomes the base default. Then use “Reset All Overrides” on the main panel to clear runtime settings.</p>
+        <p class="harden-hint" id="harden-hint-env" hidden>Paste the complete snippet below into the docker-compose service’s <code>environment:</code> section. It includes <code>ModelMapping__Rules__*</code> and <code>Classifier__TargetModel</code>. Restart the container to apply it.</p>
+        <div class="seg" role="tablist" aria-label="Configuration format">
           <button type="button" class="seg-btn active" id="harden-fmt-json" aria-pressed="true">appsettings.json</button>
           <button type="button" class="seg-btn" id="harden-fmt-env" aria-pressed="false">docker-compose env</button>
         </div>
-        <textarea id="harden-output" class="harden-output" readonly spellcheck="false" aria-label="导出的配置片段"></textarea>
+        <textarea id="harden-output" class="harden-output" readonly spellcheck="false" aria-label="Exported configuration snippet"></textarea>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" data-close="harden-modal">关闭</button>
-        <button type="button" class="btn btn-ghost" id="harden-copy">复制</button>
-        <button type="button" class="btn btn-primary" id="harden-download">下载 .json</button>
+        <button type="button" class="btn btn-ghost" data-close="harden-modal">Close</button>
+        <button type="button" class="btn btn-ghost" id="harden-copy">Copy</button>
+        <button type="button" class="btn btn-primary" id="harden-download">Download .json</button>
       </div>
     </div>
   </div>
@@ -250,30 +250,30 @@
     <div class="modal-backdrop" data-close="proxy-modal"></div>
     <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="proxy-modal-title">
       <div class="modal-head">
-        <h3 id="proxy-modal-title">代理健康</h3>
-        <button class="modal-close" data-close="proxy-modal" aria-label="关闭">×</button>
+        <h3 id="proxy-modal-title">Proxy Health</h3>
+        <button class="modal-close" data-close="proxy-modal" aria-label="Close">×</button>
       </div>
       <div class="proxy-body">
         <table class="rules-table proxy-table">
           <thead>
             <tr>
-              <th>名称</th>
-              <th class="col-status">状态</th>
-              <th class="col-latency">延迟</th>
-              <th class="col-error">错误</th>
+              <th>Name</th>
+              <th class="col-status">STATUS</th>
+              <th class="col-latency">LATENCY</th>
+              <th class="col-error">ERROR</th>
             </tr>
           </thead>
           <tbody id="proxy-body"></tbody>
         </table>
         <div class="empty" id="proxy-empty" hidden>
           <div class="empty-glyph" aria-hidden="true">∅</div>
-          <p class="empty-title">无代理可测试</p>
+          <p class="empty-title">No proxies to test</p>
           <p class="empty-sub" id="proxy-empty-sub"></p>
         </div>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" data-close="proxy-modal">关闭</button>
-        <button type="button" class="btn btn-primary" id="proxy-refresh-btn">重新测试</button>
+        <button type="button" class="btn btn-ghost" data-close="proxy-modal">Close</button>
+        <button type="button" class="btn btn-primary" id="proxy-refresh-btn">Test Again</button>
       </div>
     </div>
   </div>

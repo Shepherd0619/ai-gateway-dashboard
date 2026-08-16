@@ -27,7 +27,7 @@
     } catch (e) { /* fall through to seed */ }
 
     const seed = {
-      gateways: [{ id: uid(), name: '本地', baseUrl: 'http://localhost:4000', apiKey: '' }],
+      gateways: [{ id: uid(), name: 'Local', baseUrl: 'http://localhost:4000', apiKey: '' }],
       activeGatewayId: null,
     };
     seed.activeGatewayId = seed.gateways[0].id;
@@ -67,24 +67,24 @@
 
   function friendlyError(err) {
     if (err && err.name === 'ApiError') {
-      if (err.kind === 'nokey') return '未配置 API Key，请先在「管理网关」中填写。';
-      if (err.kind === 'nogateway') return '未选择网关。';
-      if (err.status === 401) return '鉴权失败：API Key 缺失或不匹配。';
-      if (err.status === 404) return 'Admin API 未启用（未配置 Admin__ApiKey）或资源不存在。';
-      return err.message || '请求失败（' + err.status + '）';
+      if (err.kind === 'nokey') return 'No API key configured. Enter one in “Manage Gateways”.';
+      if (err.kind === 'nogateway') return 'No gateway selected.';
+      if (err.status === 401) return 'Authentication failed: the API key is missing or invalid.';
+      if (err.status === 404) return 'The Admin API is not enabled (Admin__ApiKey is not configured), or the resource does not exist.';
+      return err.message || 'Request failed (' + err.status + ')';
     }
-    return '无法连接网关：请检查 baseUrl、后端是否在线，以及 CORS 是否放行当前页面源。';
+    return 'Unable to connect to the gateway. Check the base URL, backend availability, and whether CORS allows this page origin.';
   }
 
   /* ── API client ───────────────────────────────────────── */
   async function api(method, path, opts) {
     opts = opts || {};
     const gw = activeGateway();
-    if (!gw) throw new ApiError('未选择网关', null, 'nogateway');
+    if (!gw) throw new ApiError('No gateway selected', null, 'nogateway');
 
     const headers = { 'Content-Type': 'application/json' };
     if (opts.requireKey !== false) {
-      if (!gw.apiKey) throw new ApiError('未配置 API Key', null, 'nokey');
+      if (!gw.apiKey) throw new ApiError('No API key configured', null, 'nokey');
       headers['x-admin-key'] = gw.apiKey;
     }
 
@@ -96,7 +96,7 @@
         body: opts.body ? JSON.stringify(opts.body) : undefined,
       });
     } catch (e) {
-      throw new ApiError('网络错误：无法连接 ' + gw.baseUrl, null, 'network');
+      throw new ApiError('Network error: unable to connect to ' + gw.baseUrl, null, 'network');
     }
 
     let data = null;
@@ -142,7 +142,7 @@
     list.replaceChildren();
 
     if (state.gateways.length === 0) {
-      list.appendChild(el('div', 'gw-empty', '暂无网关，请在下方添加第一个。'));
+      list.appendChild(el('div', 'gw-empty', 'No gateways yet. Add the first one below.'));
       return;
     }
 
@@ -155,13 +155,13 @@
 
       const actions = el('div', 'gw-item-actions');
       if (g.id !== state.activeGatewayId) {
-        const act = el('button', 'link-btn', '设为当前');
+        const act = el('button', 'link-btn', 'Set Active');
         act.setAttribute('data-gw-activate', g.id);
         actions.appendChild(act);
       }
-      const edit = el('button', 'link-btn', '编辑');
+      const edit = el('button', 'link-btn', 'Edit');
       edit.setAttribute('data-gw-edit', g.id);
-      const del = el('button', 'link-btn danger', '删除');
+      const del = el('button', 'link-btn danger', 'Delete');
       del.setAttribute('data-gw-delete', g.id);
       actions.append(edit, del);
 
@@ -178,7 +178,7 @@
     if (!rules || rules.length === 0) {
       empty.hidden = false;
       document.getElementById('empty-sub').textContent =
-        emptyMessage || '点击「新增规则」开始配置，或先在右上角选择 / 添加网关。';
+        emptyMessage || 'Click “Add Rule” to begin, or select / add a gateway in the top-right corner.';
       return;
     }
 
@@ -194,7 +194,7 @@
 
       const tdPrefix = el('td', 'cell-prefix cell-mono');
       if (catchall) {
-        tdPrefix.appendChild(el('span', 'proxy-none', '(空)'));
+        tdPrefix.appendChild(el('span', 'proxy-none', '(empty)'));
         tdPrefix.appendChild(document.createTextNode(' '));
         tdPrefix.appendChild(el('span', 'badge badge-catchall', 'CATCH-ALL'));
       } else {
@@ -203,7 +203,7 @@
 
       const tdTarget = el('td', 'cell-target cell-mono');
       if (target) tdTarget.textContent = target;
-      else tdTarget.appendChild(el('span', 'proxy-none', '（不重写）'));
+      else tdTarget.appendChild(el('span', 'proxy-none', '(no rewrite)'));
 
       const tdProxy = el('td', 'col-proxy cell-mono');
       if (proxy) tdProxy.textContent = proxy;
@@ -215,10 +215,10 @@
       const reorderGroup = el('div', 'reorder-group');
       const upBtn = el('button', 'reorder-btn', '↑');
       upBtn.setAttribute('data-move-up', String(i));
-      upBtn.title = '上移';
+      upBtn.title = 'Move up';
       const downBtn = el('button', 'reorder-btn', '↓');
       downBtn.setAttribute('data-move-down', String(i));
-      downBtn.title = '下移';
+      downBtn.title = 'Move down';
 
       const isLast = i === rules.length - 1;
       const belowIsCatchall =
@@ -227,9 +227,9 @@
       if (isLast || catchall || belowIsCatchall) downBtn.disabled = true;
       reorderGroup.append(upBtn, downBtn);
 
-      const editBtn = el('button', 'link-btn', '编辑');
+      const editBtn = el('button', 'link-btn', 'Edit');
       editBtn.setAttribute('data-edit', String(i));
-      const delBtn = el('button', 'link-btn danger', '删除');
+      const delBtn = el('button', 'link-btn danger', 'Delete');
       delBtn.setAttribute('data-delete', String(i));
       rowActions.append(reorderGroup, editBtn, delBtn);
       tdActions.appendChild(rowActions);
@@ -259,7 +259,7 @@
     const list = currentRules.map(normalizeRule);
     try {
       await Api.replaceAll(list);
-      toast('已调整顺序', 'success');
+      toast('Order updated', 'success');
       await loadRules();
       await loadClassifier();
     } catch (err) {
@@ -290,7 +290,7 @@
       return;
     }
     if (!config) {
-      body.appendChild(el('div', 'classifier-loading', '加载中…'));
+      body.appendChild(el('div', 'classifier-loading', 'Loading…'));
       resetBtn.hidden = true;
       return;
     }
@@ -303,7 +303,7 @@
 
     const grid = el('div', 'classifier-grid');
     const rows = [
-      ['INPUT MODEL', config.targetModel || '（已关闭）'],
+      ['INPUT MODEL', config.targetModel || '(disabled)'],
       ['EVALUATED TARGET', config.evaluatedTargetModel || '—'],
       ['EVALUATED PROXY', config.evaluatedProxyServer || 'DIRECT'],
       ['SOURCE', (config.source || 'base').toUpperCase()],
@@ -316,8 +316,8 @@
     });
     body.appendChild(grid);
     body.appendChild(el('p', 'classifier-note', enabled
-      ? '命中 Claude Code auto mode signature 后，使用上面的 effective route，并移除 billing header。'
-      : 'classifier 专用路由已关闭；命中 signature 的请求仍按普通 ModelMapping 处理。'));
+      ? 'When the Claude Code auto mode signature is matched, the effective route above is used and the billing header is removed.'
+      : 'The classifier-specific route is disabled; matching requests are still handled by regular ModelMapping.'));
     resetBtn.hidden = config.source !== 'runtime';
   }
 
@@ -326,7 +326,7 @@
     const gw = activeGateway();
     if (!gw) {
       classifierConfig = null;
-      renderClassifier(null, '请先在右上角选择 / 添加网关。');
+      renderClassifier(null, 'Select or add a gateway in the top-right corner first.');
       return;
     }
     renderClassifier(null);
@@ -353,32 +353,32 @@
     const btn = document.getElementById('classifier-submit');
     const value = document.getElementById('f-classifier-model').value.trim();
     btn.disabled = true;
-    btn.textContent = '保存中…';
+    btn.textContent = 'Saving…';
     try {
       const { data } = await Api.setClassifier(value || null);
       classifierConfig = data;
       renderClassifier(classifierConfig);
       closeModal('classifier-modal');
-      toast(value ? 'Classifier 已更新' : 'Classifier 专用路由已关闭', 'success');
+      toast(value ? 'Classifier updated' : 'Classifier-specific route disabled', 'success');
     } catch (err) {
       showFormError(errEl, friendlyError(err));
     } finally {
       btn.disabled = false;
-      btn.textContent = '保存';
+      btn.textContent = 'Save';
     }
   }
 
   function handleClassifierReset() {
     confirmModal({
-      title: '恢复 Classifier 默认',
-      body: '删除运行时覆盖，恢复 appsettings.json 中的 base classifier 配置？',
-      okText: '恢复默认',
+      title: 'Restore Classifier Defaults',
+      body: 'Delete the runtime override and restore the base classifier configuration from appsettings.json?',
+      okText: 'Restore Default',
       danger: false,
       onConfirm: async () => {
         try {
           await Api.deleteClassifier();
           await loadClassifier();
-          toast('Classifier 已恢复默认', 'success');
+          toast('Classifier restored to defaults', 'success');
         } catch (err) {
           toast(friendlyError(err), 'error');
         }
@@ -399,7 +399,7 @@
         setHealth('bad', 'UNHEALTHY');
       }
     } catch (e) {
-      setHealth('bad', '不可达');
+      setHealth('bad', 'UNREACHABLE');
     }
   }
 
@@ -415,7 +415,7 @@
     if (!rows || rows.length === 0) {
       empty.hidden = false;
       document.getElementById('proxy-empty-sub').textContent =
-        emptyMessage || '后端未配置任何 ProxyServer（ProxyServers 段为空）。';
+        emptyMessage || 'The backend has no ProxyServers configured (the ProxyServers section is empty).';
       return;
     }
 
@@ -451,28 +451,28 @@
     const tr = el('tr');
     const td = el('td', 'proxy-loading');
     td.colSpan = 4;
-    td.textContent = '测试中…';
+    td.textContent = 'Testing…';
     tr.appendChild(td);
     tbody.appendChild(tr);
 
     const gw = activeGateway();
-    if (!gw) { renderProxyHealth([], '请先选择网关。'); return; }
+    if (!gw) { renderProxyHealth([], 'Select a gateway first.'); return; }
 
     const [direct, proxies] = await Promise.all([
       Api.health().then(({ data }) => ({
-        name: '直连（direct）',
+        name: 'Direct',
         status: data && data.status === 'healthy' ? 'healthy' : 'unhealthy',
         latency_ms: data ? data.latency_ms : null,
         error: data && data.error ? data.error : null,
       })).catch((err) => ({
-        name: '直连（direct）',
+        name: 'Direct',
         status: 'unhealthy',
         latency_ms: null,
         error: friendlyError(err),
       })),
       Api.proxyHealth().then(({ data }) => (Array.isArray(data) ? data : []))
         .catch((err) => [{
-          name: '代理',
+          name: 'Proxy',
           status: 'unhealthy',
           latency_ms: null,
           error: friendlyError(err),
@@ -483,7 +483,7 @@
 
     if (proxies.length === 0) {
       const hintTr = el('tr');
-      const hintTd = el('td', 'proxy-empty-hint', '无代理可测试 · 后端未配置任何 ProxyServer（ProxyServers 段为空）。');
+      const hintTd = el('td', 'proxy-empty-hint', 'No proxies to test · the backend has no ProxyServers configured (the ProxyServers section is empty).');
       hintTd.colSpan = 4;
       hintTr.appendChild(hintTd);
       document.getElementById('proxy-body').appendChild(hintTr);
@@ -494,17 +494,17 @@
     const gw = activeGateway();
     if (!gw) {
       currentRules = [];
-      renderRules([], '请先在右上角选择 / 添加网关。');
-      renderClassifier(null, '请先在右上角选择 / 添加网关。');
-      setFoot('offline', '未选择网关');
+      renderRules([], 'Select or add a gateway in the top-right corner first.');
+      renderClassifier(null, 'Select or add a gateway in the top-right corner first.');
+      setFoot('offline', 'No gateway selected');
       return;
     }
-    setFoot('', '加载中…');
+    setFoot('', 'Loading…');
     try {
       const { data } = await Api.listMappings();
       currentRules = Array.isArray(data) ? data : [];
       renderRules(currentRules);
-      setFoot('online', currentRules.length + ' 条规则 · ' + gw.baseUrl);
+      setFoot('online', currentRules.length + '  rules · ' + gw.baseUrl);
     } catch (e) {
       currentRules = [];
       renderRules([], friendlyError(e));
@@ -540,7 +540,7 @@
     document.getElementById('confirm-title').textContent = opts.title;
     document.getElementById('confirm-body').textContent = opts.body;
     const ok = document.getElementById('confirm-ok');
-    ok.textContent = opts.okText || '确认';
+    ok.textContent = opts.okText || 'Confirm';
     ok.className = 'btn ' + (opts.danger === false ? 'btn-primary' : 'btn-danger');
     confirmCallback = opts.onConfirm || null;
     openModal('confirm-modal');
@@ -549,7 +549,7 @@
   /* ── rule form ────────────────────────────────────────── */
   function openRuleForm(mode, rule) {
     editingPrefix = mode === 'edit' ? (rule.prefix == null ? '' : rule.prefix) : null;
-    document.getElementById('rule-modal-title').textContent = mode === 'edit' ? '编辑规则' : '新增规则';
+    document.getElementById('rule-modal-title').textContent = mode === 'edit' ? 'Edit Rule' : 'Add Rule';
     document.getElementById('rule-form-error').hidden = true;
 
     document.getElementById('f-prefix').value = mode === 'edit' ? (rule.prefix == null ? '' : rule.prefix) : '';
@@ -562,9 +562,9 @@
       const i = currentRules.findIndex(
         (r) => (r.prefix == null ? '' : r.prefix).toLowerCase() === editingPrefix.toLowerCase()
       );
-      idxHint.textContent = '当前位置：第 ' + (i + 1) + ' 位。填数字可移动；留空 = 保持原位。';
+      idxHint.textContent = 'Current position: ' + (i + 1) + ' . Enter a number to move it; leave blank to keep its position.';
     } else {
-      idxHint.textContent = '1-based，对应左侧 # 列；留空 = 追加到末尾。空 prefix（catch-all）固定末尾。';
+      idxHint.textContent = '1-based, corresponding to the # column; leave blank to append to the end. An empty prefix (catch-all) is always placed last.';
     }
 
     openModal('rule-modal');
@@ -574,7 +574,7 @@
   function setSubmitBusy(busy) {
     const btn = document.getElementById('rule-submit');
     btn.disabled = busy;
-    btn.textContent = busy ? '保存中…' : '保存';
+    btn.textContent = busy ? 'Saving…' : 'Save';
   }
 
   function readRuleForm() {
@@ -605,10 +605,10 @@
         // prefix is the primary key; changing it = delete old + add new.
         await Api.remove(original);
         await Api.upsert(f.prefix, f.target, f.proxyServer);
-        toast('已删除「' + original + '」并新增「' + f.prefix + '」', 'success');
+        toast('Deleted “' + original + '” and added “' + f.prefix + '”', 'success');
       } else {
         await Api.upsert(f.prefix, f.target, f.proxyServer);
-        toast(original === null ? '已新增「' + f.prefix + '」' : '已更新「' + f.prefix + '」', 'success');
+        toast(original === null ? 'Added “' + f.prefix + '”' : 'Updated “' + f.prefix + '”', 'success');
       }
       closeModal('rule-modal');
       await loadRules();
@@ -646,11 +646,11 @@
 
       let msg;
       if (f.prefix === '') {
-        msg = '已保存 catch-all（固定末尾）';
+        msg = 'Catch-all saved (pinned to the end)';
       } else if (wantIndex !== null) {
-        msg = '已保存「' + f.prefix + '」到第 ' + (pos + 1) + ' 位';
+        msg = 'Saved “' + f.prefix + '” at position ' + (pos + 1);
       } else {
-        msg = (editingPrefix === null ? '已新增' : '已更新') + '「' + f.prefix + '」';
+        msg = (editingPrefix === null ? 'Added ' : 'Updated ') + '“' + f.prefix + '”';
       }
       toast(msg, 'success');
       closeModal('rule-modal');
@@ -666,9 +666,9 @@
   /* ── delete ───────────────────────────────────────────── */
   function handleDelete(prefix) {
     confirmModal({
-      title: '删除规则',
-      body: '确定删除规则「' + prefix + '」？若该 prefix 有 base 默认值，删除后将回退到默认。',
-      okText: '删除',
+      title: 'Delete Rule',
+      body: 'Delete rule “' + prefix + '”? If this prefix has a base default, deleting it will fall back to that default.',
+      okText: 'Delete',
       onConfirm: async () => {
         try {
           await Api.remove(prefix);
@@ -678,9 +678,9 @@
             (r) => (r.prefix == null ? '' : r.prefix).toLowerCase() === prefix.toLowerCase()
           );
           if (stillThere) {
-            toast('「' + prefix + '」来自默认配置，运行时覆盖已删除，已回退到默认值。', 'warn');
+            toast('“' + prefix + '” comes from the default configuration. The runtime override was deleted and the default is now active.', 'warn');
           } else {
-            toast('已删除「' + prefix + '」', 'success');
+            toast('Deleted “' + prefix + '”', 'success');
           }
         } catch (err) {
           toast(friendlyError(err), 'error');
@@ -691,13 +691,13 @@
 
   function handleResetAll() {
     confirmModal({
-      title: '重置全部运行时覆盖',
-      body: '将清空所有运行时覆盖（PUT []），规则回退到 appsettings.json 中的 base 默认值。此操作不可撤销。',
-      okText: '重置',
+      title: 'Reset All Runtime Overrides',
+      body: 'This clears all runtime overrides (PUT []) and falls back to the base defaults in appsettings.json. This action cannot be undone.',
+      okText: 'Reset',
       onConfirm: async () => {
         try {
           await Api.replaceAll([]);
-          toast('已重置全部运行时覆盖', 'success');
+          toast('All runtime overrides reset', 'success');
           await loadRules();
           await loadClassifier();
         } catch (err) {
@@ -714,7 +714,7 @@
     document.getElementById('g-baseUrl').value = '';
     document.getElementById('g-apiKey').value = '';
     document.getElementById('gw-cancel-edit').hidden = true;
-    document.getElementById('gw-save').textContent = '保存网关';
+    document.getElementById('gw-save').textContent = 'Save Gateway';
     document.getElementById('gw-form-error').hidden = true;
   }
 
@@ -726,19 +726,19 @@
     document.getElementById('g-baseUrl').value = g.baseUrl;
     document.getElementById('g-apiKey').value = g.apiKey;
     document.getElementById('gw-cancel-edit').hidden = false;
-    document.getElementById('gw-save').textContent = '保存修改';
+    document.getElementById('gw-save').textContent = 'Save Changes';
     document.getElementById('gw-form-error').hidden = true;
   }
 
   function handleGwSave() {
-    const name = document.getElementById('g-name').value.trim() || '未命名';
+    const name = document.getElementById('g-name').value.trim() || 'Unnamed';
     const baseUrl = document.getElementById('g-baseUrl').value.trim();
     const apiKey = document.getElementById('g-apiKey').value.trim();
     const errEl = document.getElementById('gw-form-error');
 
-    if (!baseUrl) { showFormError(errEl, 'BASE URL 不能为空。'); return; }
+    if (!baseUrl) { showFormError(errEl, 'BASE URL cannot be empty.'); return; }
     if (!/^https?:\/\//i.test(baseUrl)) {
-      showFormError(errEl, 'BASE URL 需以 http:// 或 https:// 开头。');
+      showFormError(errEl, 'BASE URL must start with http:// or https://.');
       return;
     }
 
@@ -756,15 +756,15 @@
     renderGatewaySelect();
     renderGwList();
     loadAll();
-    toast('网关已保存', 'success');
+    toast('Gateway saved', 'success');
   }
 
   function handleGwDelete(id) {
     const g = state.gateways.find((x) => x.id === id);
     confirmModal({
-      title: '删除网关',
-      body: '确定删除网关「' + (g ? g.name : '') + '」？仅移除浏览器中的记录，不影响后端。',
-      okText: '删除',
+      title: 'Delete Gateway',
+      body: 'Delete gateway “' + (g ? g.name : '') + '”? This only removes the browser record and does not affect the backend.',
+      okText: 'Delete',
       onConfirm: () => {
         state.gateways = state.gateways.filter((x) => x.id !== id);
         if (state.activeGatewayId === id) {
@@ -775,7 +775,7 @@
         renderGatewaySelect();
         renderGwList();
         loadAll();
-        toast('网关已删除', 'info');
+        toast('Gateway deleted', 'info');
       },
     });
   }
@@ -827,12 +827,12 @@
     envBtn.classList.toggle('active', !isJson);
     envBtn.setAttribute('aria-pressed', String(!isJson));
 
-    document.getElementById('harden-download').textContent = isJson ? '下载 .json' : '下载 .yml';
+    document.getElementById('harden-download').textContent = isJson ? 'Download .json' : 'Download .yml';
   }
 
   async function openHardenModal() {
     if (!activeGateway()) {
-      toast('请先选择网关', 'warn');
+      toast('Select a gateway first', 'warn');
       return;
     }
 
@@ -840,7 +840,7 @@
     // response cannot produce an export with a missing/stale classifier.
     await loadClassifier();
     if (!currentRules.length && !classifierConfig) {
-      toast('当前没有可固化的配置', 'warn');
+      toast('There is no configuration to harden', 'warn');
       return;
     }
     renderHarden();
@@ -865,14 +865,14 @@
     const ta = document.getElementById('harden-output');
     try {
       await navigator.clipboard.writeText(ta.value);
-      toast('已复制到剪贴板', 'success');
+      toast('Copied to clipboard', 'success');
     } catch (e) {
       ta.select();
       try {
         document.execCommand('copy');
-        toast('已复制到剪贴板', 'success');
+        toast('Copied to clipboard', 'success');
       } catch (e2) {
-        toast('复制失败，请手动选择复制', 'error');
+        toast('Copy failed. Select and copy manually', 'error');
       }
     }
   }

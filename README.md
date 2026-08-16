@@ -1,33 +1,33 @@
 # AI Gateway · Runtime Mapping Console
 
-纯静态管理页面，用于在运行时查看 / 新增 / 编辑 / 删除 AI Gateway 的模型映射规则。零依赖、无构建步骤，直接放进 Apache HTTPD 即可。
+A pure static admin page for viewing, adding, editing, and deleting AI Gateway model-mapping rules at runtime. It has zero dependencies and no build step; place it directly in Apache HTTPD.
 
-## 文件
+## Files
 
-| 文件 | 说明 |
+| File | Description |
 |---|---|
-| `index.html` | 页面骨架 |
-| `styles.css` | 「暗色·工业控制台」主题 |
-| `app.js` | 逻辑（多网关管理、API 封装、CRUD） |
+| `index.html` | Page structure |
+| `styles.css` | “Dark industrial control panel” theme |
+| `app.js` | Logic (multi-gateway management, API wrapper, CRUD) |
 
-三个文件放到同一个目录即可，浏览器打开 `index.html`（或由 Apache 托管）。
+Place the three files in the same directory and open `index.html` in a browser, or serve it through Apache.
 
-## 部署步骤
+## Deployment
 
-### 1. 后端：启用 Admin API 并配置 CORS
+### 1. Backend: enable the Admin API and configure CORS
 
-页面默认**直连**网关后端（`http://localhost:4000`），是跨域请求，需要后端做两件事：
+The page connects directly to the gateway backend by default (`http://localhost:4000`). Because this is a cross-origin request, the backend must do two things:
 
-- **设置 `Admin__ApiKey`**（环境变量），否则 admin API 整体返回 404：
+- **Set `Admin__ApiKey`** as an environment variable; otherwise the entire Admin API returns 404:
 
   ```bash
-  # 示例（Linux/macOS）
+  # Example (Linux/macOS)
   Admin__ApiKey=sk-admin-xxx dotnet run
   # Windows PowerShell
   # $env:Admin__ApiKey = "sk-admin-xxx"; dotnet run
   ```
 
-- **把页面源加入 CORS 白名单**。页面由 Apache 托管在哪个源，就加哪个源（`appsettings.json` → `Cors:AllowedOrigins`）：
+- **Add the page origin to the CORS allowlist.** Add the origin where Apache serves the page (`appsettings.json` → `Cors:AllowedOrigins`):
 
   ```json
   {
@@ -40,52 +40,52 @@
   }
   ```
 
-  改完重启网关。若从 `file://` 直接打开页面，源是 `null`，多数浏览器会被 CORS 拦截——请用 Apache 或任意本地 HTTP 服务托管后再访问。
+Restart the gateway after making these changes. If you open the page directly from `file://`, its origin is `null` and most browsers will block it through CORS. Serve it through Apache or any local HTTP server instead.
 
-### 2. Apache：托管静态文件
+### 2. Apache: serve the static files
 
-把三个文件复制到 Apache 的 `DocumentRoot`（如 `htdocs/`），无需任何额外模块或 `.htaccess` 配置，纯静态托管即可。
+Copy the three files to Apache’s `DocumentRoot` (such as `htdocs/`). No additional modules or `.htaccess` configuration are required.
 
-### 3. 使用
+### 3. Usage
 
-1. 打开页面，右上角「管理」→ 添加网关（名称 / Base URL / API Key）。
-2. 选择当前网关，页面自动拉取 `/health` 与 `/admin/mappings`。
-3. 增删改规则，改动即时生效并持久化到后端的 `mappings-runtime.json`。
+1. Open the page and select **Manage** in the top-right corner, then add a gateway (name / Base URL / API Key).
+2. Select the active gateway; the page automatically fetches `/health` and `/admin/mappings`.
+3. Add, edit, or delete rules. Changes take effect immediately and persist to `mappings-runtime.json` on the backend.
 
-## 多网关
+## Multiple gateways
 
-- 网关列表（名称 / Base URL / API Key）保存在浏览器 `localStorage`（key：`aiGatewayAdmin.v1`），不会上传。
-- 每个网关独立保存自己的 `x-admin-key`；切换网关即切换目标后端。
+- The gateway list (name / Base URL / API Key) is stored in the browser’s `localStorage` (`aiGatewayAdmin.v1`) and is never uploaded.
+- Each gateway stores its own `x-admin-key`; switching gateways switches the backend target.
 
-## 重排规则
+## Reordering rules
 
-规则按 first-match-wins 自上而下匹配，顺序即优先级。页面提供两种重排方式：
+Rules are matched from top to bottom using first-match-wins, so order determines priority. The page provides two ways to reorder them:
 
-- **上移 / 下移按钮**：每行操作列的 `↑` / `↓` 立即调整相邻位置并全量提交。
-- **edit modal 的「位置 INDEX」字段**：填 1-based 位置（对应 `#` 列）后保存，规则会移动到该位置；留空 = 保持原位 / 追加到末尾。
+- **Move up / Move down buttons:** the `↑` / `↓` controls in each row’s action column immediately move the rule one position and submit the complete list.
+- **The `Position INDEX` field in the edit modal:** enter a 1-based position corresponding to the `#` column and save to move the rule there. Leave it blank to keep the current position or append a new rule to the end.
 
-重排会把**完整有效列表**通过 `PUT /admin/mappings` 提交，因此当前所有规则（含 base 默认）都会被「提升」为 runtime 覆盖。空 prefix（catch-all）始终固定在末尾。
+Reordering submits the **complete effective list** through `PUT /admin/mappings`, so every current rule, including base defaults, becomes a runtime override. An empty prefix (catch-all) is always pinned to the end.
 
-## 固化配置（harden）
+## Hardening configuration
 
-把当前有效规则固化成为 base 默认。固化弹窗顶部可切换两种导出格式：
+Use the harden dialog to turn the current effective rules into base defaults. The dialog provides two export formats:
 
-- **appsettings.json**：生成 `ModelMapping:Rules` 片段，复制或下载 `.json`，粘贴进 `appsettings.json` 的 `ModelMapping` 段。
-- **docker-compose env**：生成 `environment:` 环境变量片段（`ModelMapping__Rules__{i}__Prefix/Target/ProxyServer`），粘贴进服务的 `environment:` 段。环境变量按 index 覆盖 `ModelMapping:Rules`。
+- **appsettings.json:** generates a `ModelMapping:Rules` snippet that can be copied or downloaded as `.json` and pasted into the `ModelMapping` section of `appsettings.json`.
+- **docker-compose env:** generates an `environment:` variable snippet (`ModelMapping__Rules__{i}__Prefix/Target/ProxyServer`) for the service’s `environment:` section. Environment variables override `ModelMapping:Rules` by index.
 
-固化后重启网关/容器；随后可在面板「重置全部覆盖」清空 runtime，让 base 成为唯一来源。
+Restart the gateway or container after hardening. Then use **Reset All Overrides** in the panel to clear runtime state so the base configuration becomes the only source.
 
-## 行为说明与已知限制
+## Behavior and known limitations
 
-- **target 可空**：空 `target` 表示"匹配该 prefix 但保持原模型名不变（不重写）"，`PATCH` / `PUT` 行为一致，非必填。
-- **prefix 含 `/`**：请求路径已做 `encodeURIComponent`，无需手动处理。
-- **空 prefix（catch-all）**：`PATCH` 路由不到，前端改走 `PUT` 全量提交；页面强制 catch-all 排在列表末尾（后端 first-match-wins）。
-- **区分 base vs runtime**：后端 `GET /admin/mappings` 只返回合并视图，不标注来源。删除某规则后若它仍在列表里，说明它来自 `appsettings.json` 默认（已回退），页面会提示。
-- **重排 / 填 index 会全量 PUT**：等于把当前完整列表（含 base）写入 runtime 覆盖；之后若再改 `appsettings.json` 的同名 base 规则会被 runtime 覆盖挡住，需「固化 + 重置全部覆盖」收口。
-- **PUT 是替换而非合并**：重排、「重置全部覆盖」与「空 prefix」场景使用；单条普通编辑仍走 `PATCH`。
+- **`target` may be empty:** an empty `target` means “match this prefix but keep the original model name unchanged (do not rewrite).” `PATCH` and `PUT` behave consistently; the field is optional.
+- **Prefixes containing `/`:** the request path uses `encodeURIComponent`, so no manual escaping is required.
+- **Empty prefix (catch-all):** because `PATCH` cannot address it, the frontend uses a complete `PUT`; the page always places the catch-all rule at the end (the backend uses first-match-wins).
+- **Base vs. runtime:** `GET /admin/mappings` returns a merged view without identifying the source. If a rule remains after deletion, it came from the `appsettings.json` default and has been restored; the page displays a notice.
+- **Reordering / entering an index uses a complete `PUT`:** this writes the current complete list, including base rules, as runtime overrides. Later changes to a same-named base rule in `appsettings.json` will be hidden by the runtime override; use **Harden Configuration + Reset All Overrides** to reconcile them.
+- **`PUT` replaces rather than merges:** it is used for reordering, **Reset All Overrides**, and empty-prefix operations. A normal single-rule edit still uses `PATCH`.
 
-## 对接的后端契约
+## Backend contract
 
-- `GET/PUT /admin/mappings`、`GET/PATCH/DELETE /admin/mappings/{prefix}`（需 `x-admin-key`）
-- `GET /health`（免鉴权）
-- 字段 camelCase：`prefix` / `target` / `proxyServer`
+- `GET/PUT /admin/mappings`, `GET/PATCH/DELETE /admin/mappings/{prefix}` (requires `x-admin-key`)
+- `GET /health` (no authentication required)
+- camelCase fields: `prefix` / `target` / `proxyServer`
