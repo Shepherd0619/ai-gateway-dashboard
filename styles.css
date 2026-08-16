@@ -282,6 +282,19 @@ input::placeholder { color: var(--muted); }
 .panel-hint { font-size: 10px; letter-spacing: 0.14em; color: var(--muted); }
 .panel-actions { display: flex; gap: 10px; }
 
+/* ── classifier ── */
+.classifier-panel { margin-top: 20px; }
+.classifier-body { padding: 20px 22px; }
+.classifier-status { display: inline-flex; align-items: center; gap: 9px; font-size: 11px; letter-spacing: 0.14em; }
+.classifier-status.enabled { color: var(--green); }
+.classifier-status.disabled { color: var(--muted); }
+.classifier-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+.classifier-item { min-width: 0; }
+.classifier-value { margin-top: 6px; color: var(--text); overflow-wrap: anywhere; }
+.classifier-item:nth-child(2) .classifier-value { color: var(--blue); }
+.classifier-note, .classifier-loading, .classifier-error { margin: 18px 0 0; color: var(--muted); font-size: 12px; }
+.classifier-error { color: var(--red); }
+
 /* ── table ── */
 .table-wrap { position: relative; }
 .rules-table { width: 100%; border-collapse: collapse; }
@@ -624,4 +637,5 @@ form { padding: 20px; }
   .gw-form-row { flex-direction: column; }
   .panel-head { flex-direction: column; align-items: stretch; }
   .panel-actions { justify-content: flex-end; }
+  .classifier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -84,7 +84,47 @@
         <span class="foot-note">规则即时生效 · 持久化至 mappings-runtime.json</span>
       </footer>
     </section>
+
+    <section class="panel classifier-panel">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2>AUTO MODE CLASSIFIER</h2>
+          <span class="panel-hint">CLAUDE CODE SIGNATURE ROUTE</span>
+        </div>
+        <div class="panel-actions">
+          <button id="classifier-reset-btn" class="btn btn-ghost" hidden>恢复默认</button>
+          <button id="classifier-edit-btn" class="btn btn-primary">编辑</button>
+        </div>
+      </div>
+      <div class="classifier-body" id="classifier-body">
+        <div class="classifier-loading">加载中…</div>
+      </div>
+    </section>
   </main>
+
+  <!-- ══════════════ CLASSIFIER MODAL ══════════════ -->
+  <div class="modal" id="classifier-modal" hidden>
+    <div class="modal-backdrop" data-close="classifier-modal"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="classifier-modal-title">
+      <div class="modal-head">
+        <h3 id="classifier-modal-title">编辑 Auto Mode Classifier</h3>
+        <button class="modal-close" data-close="classifier-modal" aria-label="关闭">×</button>
+      </div>
+      <form id="classifier-form" novalidate>
+        <div class="form-field">
+          <label class="field-label" for="f-classifier-model">INPUT MODEL</label>
+          <input id="f-classifier-model" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="例如 deepseek/deepseek-v4-flash" />
+          <p class="field-hint">可填写任意模型名。留空会关闭 classifier 专用路由，并回到普通 ModelMapping。</p>
+        </div>
+        <div class="form-error" id="classifier-form-error" hidden></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close="classifier-modal">取消</button>
+          <button type="submit" class="btn btn-primary" id="classifier-submit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- ══════════════ RULE MODAL (新增 / 编辑) ══════════════ -->
   <div class="modal" id="rule-modal" hidden>
@@ -189,8 +229,8 @@
         <button class="modal-close" data-close="harden-modal" aria-label="关闭">×</button>
       </div>
       <div class="harden-body">
-        <p class="harden-hint" id="harden-hint-json">把下面这段粘贴进 <code>appsettings.json</code> 的 <code>ModelMapping</code> 段，重启网关后即为 base 默认。之后可在主面板「重置全部覆盖」清空 runtime。</p>
-        <p class="harden-hint" id="harden-hint-env" hidden>把下面这段粘贴进 docker-compose 服务的 <code>environment:</code> 段。环境变量按 index 覆盖 <code>ModelMapping:Rules</code>，重启容器生效。</p>
+        <p class="harden-hint" id="harden-hint-json">把下面完整配置粘贴进 <code>appsettings.json</code>。内容包含 <code>ModelMapping</code> 与 <code>Classifier</code>，重启网关后即为 base 默认。之后可在主面板「重置全部覆盖」清空 runtime。</p>
+        <p class="harden-hint" id="harden-hint-env" hidden>把下面完整片段粘贴进 docker-compose 服务的 <code>environment:</code> 段。内容包含 <code>ModelMapping__Rules__*</code> 与 <code>Classifier__TargetModel</code>，重启容器生效。</p>
         <div class="seg" role="tablist" aria-label="配置格式">
           <button type="button" class="seg-btn active" id="harden-fmt-json" aria-pressed="true">appsettings.json</button>
           <button type="button" class="seg-btn" id="harden-fmt-env" aria-pressed="false">docker-compose env</button>
@@ -241,6 +281,6 @@
   <!-- ══════════════ TOASTS ══════════════ -->
   <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
 
-  <script src="app.js" defer></script>
+  <script src="app.js?v=classifier-export-20260816" defer></script>
 </body>
 </html>
