@@ -11,6 +11,7 @@
 
   const state = loadState();
   let currentRules = [];
+  let classifierConfig = null;
   let editingPrefix = null;   // non-null => edit mode (original prefix)
   let editingGwId = null;     // non-null => editing an existing gateway
   let confirmCallback = null;
@@ -118,6 +119,9 @@
       }),
     remove: (prefix) => api('DELETE', '/admin/mappings/' + encodeURIComponent(prefix)),
     replaceAll: (rules) => api('PUT', '/admin/mappings', { body: rules }),
+    getClassifier: () => api('GET', '/admin/classifier'),
+    setClassifier: (targetModel) => api('PUT', '/admin/classifier', { body: { targetModel: targetModel } }),
+    deleteClassifier: () => api('DELETE', '/admin/classifier'),
   };
 
   /* ── rendering ────────────────────────────────────────── */
@@ -257,6 +261,7 @@
       await Api.replaceAll(list);
       toast('已调整顺序', 'success');
       await loadRules();
+      await loadClassifier();
     } catch (err) {
       toast(friendlyError(err), 'error');
       await loadRules();
@@ -272,6 +277,113 @@
     const node = document.getElementById('foot-status');
     node.className = stateName;
     node.textContent = text;
+  }
+
+  function renderClassifier(config, errorMessage) {
+    const body = document.getElementById('classifier-body');
+    const resetBtn = document.getElementById('classifier-reset-btn');
+    body.replaceChildren();
+
+    if (errorMessage) {
+      body.appendChild(el('div', 'classifier-error', errorMessage));
+      resetBtn.hidden = true;
+      return;
+    }
+    if (!config) {
+      body.appendChild(el('div', 'classifier-loading', '加载中…'));
+      resetBtn.hidden = true;
+      return;
+    }
+
+    const enabled = !!config.targetModel;
+    const status = el('div', 'classifier-status ' + (enabled ? 'enabled' : 'disabled'));
+    status.appendChild(el('span', 'led ' + (enabled ? 'led-ok' : 'led-idle')));
+    status.appendChild(el('span', null, enabled ? 'ENABLED' : 'DISABLED'));
+    body.appendChild(status);
+
+    const grid = el('div', 'classifier-grid');
+    const rows = [
+      ['INPUT MODEL', config.targetModel || '（已关闭）'],
+      ['EVALUATED TARGET', config.evaluatedTargetModel || '—'],
+      ['EVALUATED PROXY', config.evaluatedProxyServer || 'DIRECT'],
+      ['SOURCE', (config.source || 'base').toUpperCase()],
+    ];
+    rows.forEach(([label, value]) => {
+      const item = el('div', 'classifier-item');
+      item.appendChild(el('div', 'field-label', label));
+      item.appendChild(el('div', 'classifier-value cell-mono', value));
+      grid.appendChild(item);
+    });
+    body.appendChild(grid);
+    body.appendChild(el('p', 'classifier-note', enabled
+      ? '命中 Claude Code auto mode signature 后，使用上面的 effective route，并移除 billing header。'
+      : 'classifier 专用路由已关闭；命中 signature 的请求仍按普通 ModelMapping 处理。'));
+    resetBtn.hidden = config.source !== 'runtime';
+  }
+
+  /* ── data loading ─────────────────────────────────────── */
+  async function loadClassifier() {
+    const gw = activeGateway();
+    if (!gw) {
+      classifierConfig = null;
+      renderClassifier(null, '请先在右上角选择 / 添加网关。');
+      return;
+    }
+    renderClassifier(null);
+    try {
+      const { data } = await Api.getClassifier();
+      classifierConfig = data;
+      renderClassifier(classifierConfig);
+    } catch (err) {
+      classifierConfig = null;
+      renderClassifier(null, friendlyError(err));
+    }
+  }
+
+  function openClassifierForm() {
+    document.getElementById('f-classifier-model').value = classifierConfig && classifierConfig.targetModel || '';
+    document.getElementById('classifier-form-error').hidden = true;
+    openModal('classifier-modal');
+    document.getElementById('f-classifier-model').focus();
+  }
+
+  async function handleClassifierSubmit(e) {
+    e.preventDefault();
+    const errEl = document.getElementById('classifier-form-error');
+    const btn = document.getElementById('classifier-submit');
+    const value = document.getElementById('f-classifier-model').value.trim();
+    btn.disabled = true;
+    btn.textContent = '保存中…';
+    try {
+      const { data } = await Api.setClassifier(value || null);
+      classifierConfig = data;
+      renderClassifier(classifierConfig);
+      closeModal('classifier-modal');
+      toast(value ? 'Classifier 已更新' : 'Classifier 专用路由已关闭', 'success');
+    } catch (err) {
+      showFormError(errEl, friendlyError(err));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '保存';
+    }
+  }
+
+  function handleClassifierReset() {
+    confirmModal({
+      title: '恢复 Classifier 默认',
+      body: '删除运行时覆盖，恢复 appsettings.json 中的 base classifier 配置？',
+      okText: '恢复默认',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          await Api.deleteClassifier();
+          await loadClassifier();
+          toast('Classifier 已恢复默认', 'success');
+        } catch (err) {
+          toast(friendlyError(err), 'error');
+        }
+      },
+    });
   }
 
   /* ── data loading ─────────────────────────────────────── */
@@ -383,6 +495,7 @@
     if (!gw) {
       currentRules = [];
       renderRules([], '请先在右上角选择 / 添加网关。');
+      renderClassifier(null, '请先在右上角选择 / 添加网关。');
       setFoot('offline', '未选择网关');
       return;
     }
@@ -402,6 +515,7 @@
   function loadAll() {
     loadRules();
     loadHealth();
+    loadClassifier();
   }
 
   /* ── toasts ───────────────────────────────────────────── */
@@ -498,6 +612,7 @@
       }
       closeModal('rule-modal');
       await loadRules();
+      await loadClassifier();
     } catch (err) {
       showFormError(errEl, friendlyError(err));
     } finally {
@@ -540,6 +655,7 @@
       toast(msg, 'success');
       closeModal('rule-modal');
       await loadRules();
+      await loadClassifier();
     } catch (err) {
       showFormError(errEl, friendlyError(err));
     } finally {
@@ -557,6 +673,7 @@
         try {
           await Api.remove(prefix);
           await loadRules();
+          await loadClassifier();
           const stillThere = currentRules.some(
             (r) => (r.prefix == null ? '' : r.prefix).toLowerCase() === prefix.toLowerCase()
           );
@@ -582,6 +699,7 @@
           await Api.replaceAll([]);
           toast('已重置全部运行时覆盖', 'success');
           await loadRules();
+          await loadClassifier();
         } catch (err) {
           toast(friendlyError(err), 'error');
         }
@@ -663,6 +781,10 @@
   }
 
   /* ── harden / export ──────────────────────────────────── */
+  function classifierTargetForHarden() {
+    return classifierConfig && classifierConfig.targetModel ? classifierConfig.targetModel : '';
+  }
+
   function buildHardenSnippet() {
     const rules = currentRules.map((r) => {
       const out = {
@@ -672,7 +794,10 @@
       if (r.proxyServer) out.ProxyServer = r.proxyServer;
       return out;
     });
-    return JSON.stringify({ ModelMapping: { Rules: rules } }, null, 2);
+    return JSON.stringify({
+      ModelMapping: { Rules: rules },
+      Classifier: { TargetModel: classifierTargetForHarden() || null },
+    }, null, 2);
   }
 
   function buildHardenEnvSnippet() {
@@ -685,6 +810,7 @@
       lines.push('      - ModelMapping__Rules__' + i + '__Target=' + target);
       lines.push('      - ModelMapping__Rules__' + i + '__ProxyServer=' + proxyServer);
     });
+    lines.push('      - Classifier__TargetModel=' + classifierTargetForHarden());
     return lines.join('\n');
   }
 
@@ -704,9 +830,17 @@
     document.getElementById('harden-download').textContent = isJson ? '下载 .json' : '下载 .yml';
   }
 
-  function openHardenModal() {
-    if (!currentRules.length) {
-      toast('当前没有可固化的规则', 'warn');
+  async function openHardenModal() {
+    if (!activeGateway()) {
+      toast('请先选择网关', 'warn');
+      return;
+    }
+
+    // Refresh before generating the snippet so a page refresh or a slow API
+    // response cannot produce an export with a missing/stale classifier.
+    await loadClassifier();
+    if (!currentRules.length && !classifierConfig) {
+      toast('当前没有可固化的配置', 'warn');
       return;
     }
     renderHarden();
@@ -765,6 +899,9 @@
 
     document.getElementById('add-btn').addEventListener('click', () => openRuleForm('add', null));
     document.getElementById('rule-form').addEventListener('submit', handleRuleSubmit);
+    document.getElementById('classifier-edit-btn').addEventListener('click', openClassifierForm);
+    document.getElementById('classifier-form').addEventListener('submit', handleClassifierSubmit);
+    document.getElementById('classifier-reset-btn').addEventListener('click', handleClassifierReset);
 
     document.getElementById('refresh-btn').addEventListener('click', loadAll);
     document.getElementById('health').addEventListener('click', () => {
