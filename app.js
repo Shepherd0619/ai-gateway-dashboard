@@ -592,8 +592,10 @@
     const rawIdx = document.getElementById('f-index').value.trim();
     const wantIndex = rawIdx === '' ? null : parseInt(rawIdx, 10);
 
-    // Empty prefix (catch-all) or an explicit index → full-list PUT (reorder).
-    if (f.prefix === '' || (wantIndex !== null && Number.isFinite(wantIndex))) {
+    // Editing an existing rule must use full-list PUT even without an explicit
+    // index: PATCH upserts runtime rules at the end and would change its order.
+    // Empty prefix (catch-all) or an explicit index also requires full-list PUT.
+    if (editingPrefix !== null || f.prefix === '' || (wantIndex !== null && Number.isFinite(wantIndex))) {
       await saveWithOrder(f, wantIndex, errEl);
       return;
     }
@@ -624,11 +626,12 @@
     setSubmitBusy(true);
     try {
       const list = currentRules.map(normalizeRule);
+      let originalIndex = -1;
 
       // Editing: drop the original prefix so we can reposition cleanly.
       if (editingPrefix !== null) {
-        const i = list.findIndex((r) => r.prefix.toLowerCase() === editingPrefix.toLowerCase());
-        if (i >= 0) list.splice(i, 1);
+        originalIndex = list.findIndex((r) => r.prefix.toLowerCase() === editingPrefix.toLowerCase());
+        if (originalIndex >= 0) list.splice(originalIndex, 1);
       }
 
       const entry = { prefix: f.prefix, target: f.target, proxyServer: f.proxyServer };
@@ -637,8 +640,11 @@
         pos = list.length; // catch-all is pinned to the end
       } else if (wantIndex !== null) {
         pos = Math.min(Math.max(wantIndex - 1, 0), list.length);
+      } else if (originalIndex >= 0) {
+        // Keep the original zero-based position after removing the entry.
+        pos = Math.min(originalIndex, list.length);
       } else {
-        pos = list.length; // append
+        pos = list.length; // append a new rule
       }
       list.splice(pos, 0, entry);
 
