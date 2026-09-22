@@ -1,3 +1,5 @@
+import * as Routing from './routing.js';
+
 /* ═══════════════════════════════════════════════════════════
    AI GATEWAY · RUNTIME MAPPING CONSOLE — app logic
    Zero-dependency vanilla JS. Talks to the Admin API over CORS.
@@ -113,14 +115,16 @@
     listMappings: () => api('GET', '/admin/mappings'),
     health: () => api('GET', '/health', { requireKey: false }),
     proxyHealth: () => api('GET', '/admin/proxy-health'),
-    upsert: (prefix, target, proxyServer) =>
+    upsert: (prefix, target, backend, proxyServer) =>
       api('PATCH', '/admin/mappings/' + encodeURIComponent(prefix), {
-        body: { target: target, proxyServer: proxyServer },
+        body: Routing.buildMappingPatch({ target: target, backend: backend, proxyServer: proxyServer }),
       }),
     remove: (prefix) => api('DELETE', '/admin/mappings/' + encodeURIComponent(prefix)),
     replaceAll: (rules) => api('PUT', '/admin/mappings', { body: rules }),
     getClassifier: () => api('GET', '/admin/classifier'),
-    setClassifier: (targetModel) => api('PUT', '/admin/classifier', { body: { targetModel: targetModel } }),
+    setClassifier: (target, backend, proxyServer) => api('PUT', '/admin/classifier', {
+      body: Routing.buildClassifierPut({ target: target, backend: backend, proxyServer: proxyServer }),
+    }),
     deleteClassifier: () => api('DELETE', '/admin/classifier'),
   };
 
@@ -186,6 +190,7 @@
     rules.forEach((r, i) => {
       const prefix = r.prefix == null ? '' : r.prefix;
       const target = r.target == null ? '' : r.target;
+      const backend = r.backend || 'openrouter';
       const proxy = r.proxyServer || '';
       const catchall = prefix === '';
 
@@ -204,6 +209,8 @@
       const tdTarget = el('td', 'cell-target cell-mono');
       if (target) tdTarget.textContent = target;
       else tdTarget.appendChild(el('span', 'proxy-none', '(no rewrite)'));
+
+      const tdBackend = el('td', 'col-backend cell-mono', backend);
 
       const tdProxy = el('td', 'col-proxy cell-mono');
       if (proxy) tdProxy.textContent = proxy;
@@ -234,17 +241,47 @@
       rowActions.append(reorderGroup, editBtn, delBtn);
       tdActions.appendChild(rowActions);
 
-      tr.append(tdPrefix, tdTarget, tdProxy, tdActions);
+      tr.append(tdPrefix, tdTarget, tdBackend, tdProxy, tdActions);
       tbody.appendChild(tr);
     });
   }
 
   function normalizeRule(r) {
-    return {
-      prefix: r.prefix == null ? '' : r.prefix,
-      target: r.target == null ? '' : r.target,
-      proxyServer: r.proxyServer || null,
-    };
+    return Routing.normalizeRule(r);
+  }
+
+  function populateSelect(id, values, selected, emptyLabel, allowEmpty) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    select.replaceChildren();
+    if (allowEmpty) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = emptyLabel || 'Default / none';
+      select.appendChild(option);
+    }
+    values.forEach((value) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value || emptyLabel || 'Direct / none';
+      select.appendChild(option);
+    });
+    if (selected != null && values.indexOf(selected) === -1) {
+      const option = document.createElement('option');
+      option.value = selected;
+      option.textContent = selected + ' (current)';
+      select.appendChild(option);
+    }
+    select.value = selected == null ? '' : selected;
+  }
+
+  function refreshRouteChoices() {
+    const backends = Routing.collectBackendNames(currentRules, classifierConfig);
+    const proxies = Routing.collectProxyNames(currentRules, classifierConfig);
+    populateSelect('f-backend', backends, null, 'Backend default (openrouter)', true);
+    populateSelect('f-proxy', proxies, null, 'Direct / none');
+    populateSelect('f-classifier-backend', backends, null, 'No backend', true);
+    populateSelect('f-classifier-proxy', proxies, null, 'Direct / none');
   }
 
   async function reorderRule(index, dir) {
@@ -295,7 +332,7 @@
       return;
     }
 
-    const enabled = !!config.targetModel;
+    const enabled = !!config.target;
     const status = el('div', 'classifier-status ' + (enabled ? 'enabled' : 'disabled'));
     status.appendChild(el('span', 'led ' + (enabled ? 'led-ok' : 'led-idle')));
     status.appendChild(el('span', null, enabled ? 'ENABLED' : 'DISABLED'));
@@ -303,9 +340,9 @@
 
     const grid = el('div', 'classifier-grid');
     const rows = [
-      ['INPUT MODEL', config.targetModel || '(disabled)'],
-      ['EVALUATED TARGET', config.evaluatedTargetModel || '—'],
-      ['EVALUATED PROXY', config.evaluatedProxyServer || 'DIRECT'],
+      ['TARGET', config.target || '(disabled)'],
+      ['BACKEND', config.backend || '—'],
+      ['PROXY SERVER', config.proxyServer || 'DIRECT'],
       ['SOURCE', (config.source || 'base').toUpperCase()],
     ];
     rows.forEach(([label, value]) => {
@@ -332,7 +369,8 @@
     renderClassifier(null);
     try {
       const { data } = await Api.getClassifier();
-      classifierConfig = data;
+      classifierConfig = Routing.normalizeClassifier(data);
+      refreshRouteChoices();
       renderClassifier(classifierConfig);
     } catch (err) {
       classifierConfig = null;
@@ -341,25 +379,32 @@
   }
 
   function openClassifierForm() {
-    document.getElementById('f-classifier-model').value = classifierConfig && classifierConfig.targetModel || '';
+    const config = classifierConfig || {};
+    refreshRouteChoices();
+    document.getElementById('f-classifier-target').value = config.target || '';
+    populateSelect('f-classifier-backend', Routing.collectBackendNames(currentRules, classifierConfig), config.backend || '', 'No backend', true);
+    populateSelect('f-classifier-proxy', Routing.collectProxyNames(currentRules, classifierConfig), config.proxyServer || '', 'Direct / none');
     document.getElementById('classifier-form-error').hidden = true;
     openModal('classifier-modal');
-    document.getElementById('f-classifier-model').focus();
+    document.getElementById('f-classifier-target').focus();
   }
 
   async function handleClassifierSubmit(e) {
     e.preventDefault();
     const errEl = document.getElementById('classifier-form-error');
     const btn = document.getElementById('classifier-submit');
-    const value = document.getElementById('f-classifier-model').value.trim();
+    const target = document.getElementById('f-classifier-target').value.trim();
+    const backend = target ? (document.getElementById('f-classifier-backend').value || null) : null;
+    const proxyServer = target ? (document.getElementById('f-classifier-proxy').value || null) : null;
     btn.disabled = true;
     btn.textContent = 'Saving…';
     try {
-      const { data } = await Api.setClassifier(value || null);
-      classifierConfig = data;
+      const { data } = await Api.setClassifier(target || null, backend, proxyServer);
+      classifierConfig = Routing.normalizeClassifier(data);
+      refreshRouteChoices();
       renderClassifier(classifierConfig);
       closeModal('classifier-modal');
-      toast(value ? 'Classifier updated' : 'Classifier-specific route disabled', 'success');
+      toast(target ? 'Classifier updated' : 'Classifier-specific route disabled', 'success');
     } catch (err) {
       showFormError(errEl, friendlyError(err));
     } finally {
@@ -502,7 +547,8 @@
     setFoot('', 'Loading…');
     try {
       const { data } = await Api.listMappings();
-      currentRules = Array.isArray(data) ? data : [];
+      currentRules = (Array.isArray(data) ? data : []).map(normalizeRule);
+      refreshRouteChoices();
       renderRules(currentRules);
       setFoot('online', currentRules.length + '  rules · ' + gw.baseUrl);
     } catch (e) {
@@ -553,8 +599,10 @@
     document.getElementById('rule-form-error').hidden = true;
 
     document.getElementById('f-prefix').value = mode === 'edit' ? (rule.prefix == null ? '' : rule.prefix) : '';
+    refreshRouteChoices();
     document.getElementById('f-target').value = mode === 'edit' ? (rule.target == null ? '' : rule.target) : '';
-    document.getElementById('f-proxy').value = mode === 'edit' ? (rule.proxyServer || '') : '';
+    populateSelect('f-backend', Routing.collectBackendNames(currentRules, classifierConfig), mode === 'edit' ? (rule.backend || 'openrouter') : 'openrouter', 'Backend default (openrouter)', true);
+    populateSelect('f-proxy', Routing.collectProxyNames(currentRules, classifierConfig), mode === 'edit' ? (rule.proxyServer || '') : '', 'Direct / none');
     document.getElementById('f-index').value = '';
 
     const idxHint = document.getElementById('f-index-hint');
@@ -562,9 +610,9 @@
       const i = currentRules.findIndex(
         (r) => (r.prefix == null ? '' : r.prefix).toLowerCase() === editingPrefix.toLowerCase()
       );
-      idxHint.textContent = 'Current position: ' + (i + 1) + ' . Enter a number to move it; leave blank to keep its position.';
+      idxHint.textContent = 'Current position: ' + (i + 1) + ' . First-match-wins applies top to bottom, so put a more specific Prefix before a broader Prefix. Enter a number to move it; leave blank to keep its position.';
     } else {
-      idxHint.textContent = '1-based, corresponding to the # column; leave blank to append to the end. An empty prefix (catch-all) is always placed last.';
+      idxHint.textContent = '1-based, corresponding to the # column; first-match-wins applies top to bottom, so put a more specific Prefix before a broader Prefix. Leave blank to append to the end. An empty prefix (catch-all) is always placed last.';
     }
 
     openModal('rule-modal');
@@ -581,7 +629,8 @@
     return {
       prefix: document.getElementById('f-prefix').value.trim(),
       target: document.getElementById('f-target').value.trim(),
-      proxyServer: document.getElementById('f-proxy').value.trim() || null,
+      backend: document.getElementById('f-backend').value || null,
+      proxyServer: document.getElementById('f-proxy').value || null,
     };
   }
 
@@ -606,10 +655,10 @@
       if (original !== null && original.toLowerCase() !== f.prefix.toLowerCase()) {
         // prefix is the primary key; changing it = delete old + add new.
         await Api.remove(original);
-        await Api.upsert(f.prefix, f.target, f.proxyServer);
+        await Api.upsert(f.prefix, f.target, f.backend, f.proxyServer);
         toast('Deleted “' + original + '” and added “' + f.prefix + '”', 'success');
       } else {
-        await Api.upsert(f.prefix, f.target, f.proxyServer);
+        await Api.upsert(f.prefix, f.target, f.backend, f.proxyServer);
         toast(original === null ? 'Added “' + f.prefix + '”' : 'Updated “' + f.prefix + '”', 'success');
       }
       closeModal('rule-modal');
@@ -634,7 +683,7 @@
         if (originalIndex >= 0) list.splice(originalIndex, 1);
       }
 
-      const entry = { prefix: f.prefix, target: f.target, proxyServer: f.proxyServer };
+      const entry = { prefix: f.prefix, target: f.target, backend: f.backend || 'openrouter', proxyServer: f.proxyServer };
       let pos;
       if (f.prefix === '') {
         pos = list.length; // catch-all is pinned to the end
@@ -787,36 +836,23 @@
   }
 
   /* ── harden / export ──────────────────────────────────── */
-  function classifierTargetForHarden() {
-    return classifierConfig && classifierConfig.targetModel ? classifierConfig.targetModel : '';
-  }
-
   function buildHardenSnippet() {
-    const rules = currentRules.map((r) => {
-      const out = {
-        Prefix: r.prefix == null ? '' : r.prefix,
-        Target: r.target == null ? '' : r.target,
-      };
-      if (r.proxyServer) out.ProxyServer = r.proxyServer;
-      return out;
-    });
-    return JSON.stringify({
-      ModelMapping: { Rules: rules },
-      Classifier: { TargetModel: classifierTargetForHarden() || null },
-    }, null, 2);
+    return JSON.stringify(Routing.buildHardenConfig(currentRules, classifierConfig), null, 2);
   }
 
   function buildHardenEnvSnippet() {
     const lines = ['environment:'];
     currentRules.forEach((r, i) => {
-      const prefix = r.prefix == null ? '' : r.prefix;
-      const target = r.target == null ? '' : r.target;
-      const proxyServer = r.proxyServer == null ? '' : r.proxyServer;
-      lines.push('      - ModelMapping__Rules__' + i + '__Prefix=' + prefix);
-      lines.push('      - ModelMapping__Rules__' + i + '__Target=' + target);
-      lines.push('      - ModelMapping__Rules__' + i + '__ProxyServer=' + proxyServer);
+      const rule = normalizeRule(r);
+      lines.push('      - ModelMapping__Rules__' + i + '__Prefix=' + rule.prefix);
+      lines.push('      - ModelMapping__Rules__' + i + '__Target=' + rule.target);
+      lines.push('      - ModelMapping__Rules__' + i + '__Backend=' + rule.backend);
+      lines.push('      - ModelMapping__Rules__' + i + '__ProxyServer=' + (rule.proxyServer || ''));
     });
-    lines.push('      - Classifier__TargetModel=' + classifierTargetForHarden());
+    const classifier = Routing.normalizeClassifier(classifierConfig) || {};
+    lines.push('      - Classifier__Target=' + (classifier.target || ''));
+    lines.push('      - Classifier__Backend=' + (classifier.backend || ''));
+    lines.push('      - Classifier__ProxyServer=' + (classifier.proxyServer || ''));
     return lines.join('\n');
   }
 

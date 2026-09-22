@@ -49,7 +49,7 @@
       <div class="panel-head">
         <div class="panel-title">
           <h2>Mapping Rules</h2>
-          <span class="panel-hint">FIRST-MATCH-WINS · top-to-bottom matching</span>
+          <span class="panel-hint">FIRST-MATCH-WINS · top-to-bottom matching · specific prefixes above broad prefixes</span>
         </div>
         <div class="panel-actions">
           <button id="harden-btn" class="btn btn-ghost" title="Export the current effective rules as an appsettings snippet for the base configuration">Harden Configuration</button>
@@ -65,6 +65,7 @@
               <th class="col-idx">#</th>
               <th class="col-prefix">PREFIX</th>
               <th class="col-target">TARGET</th>
+              <th class="col-backend">BACKEND</th>
               <th class="col-proxy">PROXY</th>
               <th class="col-actions">ACTIONS</th>
             </tr>
@@ -112,10 +113,20 @@
       </div>
       <form id="classifier-form" novalidate>
         <div class="form-field">
-          <label class="field-label" for="f-classifier-model">INPUT MODEL</label>
-          <input id="f-classifier-model" type="text" autocomplete="off" spellcheck="false"
+          <label class="field-label" for="f-classifier-target">TARGET</label>
+          <input id="f-classifier-target" type="text" autocomplete="off" spellcheck="false"
                  placeholder="e.g. deepseek/deepseek-v4-flash" />
-          <p class="field-hint">Enter any model name. Leave blank to disable the classifier-specific route and return to regular ModelMapping.</p>
+          <p class="field-hint">Enter the classifier route model. Leave blank to disable the independent classifier route.</p>
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="f-classifier-backend">BACKEND</label>
+          <select id="f-classifier-backend" aria-label="Classifier backend"></select>
+          <p class="field-hint">Choose the named backend that receives classifier requests.</p>
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="f-classifier-proxy">PROXY SERVER</label>
+          <select id="f-classifier-proxy" aria-label="Classifier proxy server"></select>
+          <p class="field-hint">Empty means direct; the name must exist in the backend ProxyServers configuration.</p>
         </div>
         <div class="form-error" id="classifier-form-error" hidden></div>
         <div class="modal-actions">
@@ -148,16 +159,20 @@
           <p class="field-hint">Target model name to rewrite; leave blank to match the prefix without changing the original model name.</p>
         </div>
         <div class="form-field">
+          <label class="field-label" for="f-backend">BACKEND</label>
+          <select id="f-backend" name="backend" aria-label="Mapping backend"></select>
+          <p class="field-hint">Choose a named backend. If omitted by the backend, the effective default is openrouter.</p>
+        </div>
+        <div class="form-field">
           <label class="field-label" for="f-proxy">PROXY SERVER</label>
-          <input id="f-proxy" name="proxyServer" type="text" autocomplete="off" spellcheck="false"
-                 placeholder="Optional: SOCKS5 proxy name" />
-          <p class="field-hint">Must be defined in the ProxyServers configuration, otherwise the API returns 400.</p>
+          <select id="f-proxy" name="proxyServer" aria-label="Mapping proxy server"></select>
+          <p class="field-hint">Empty means direct; a selected name must exist in the ProxyServers configuration, otherwise the API returns 400.</p>
         </div>
         <div class="form-field">
           <label class="field-label" for="f-index">Position INDEX</label>
           <input id="f-index" name="index" type="number" min="1" step="1" autocomplete="off"
                  inputmode="numeric" placeholder="Leave blank = keep position / append to end" />
-          <p class="field-hint" id="f-index-hint">1-based, corresponding to the # column; enter a number to move the rule there when saved. An empty prefix (catch-all) is always placed last.</p>
+          <p class="field-hint" id="f-index-hint">1-based, corresponding to the # column; enter a number to move the rule there when saved. First-match-wins applies top to bottom: put a more specific Prefix before a broader Prefix. An empty prefix (catch-all) is always placed last.</p>
         </div>
         <div class="form-error" id="rule-form-error" hidden></div>
         <div class="modal-actions">
@@ -230,7 +245,7 @@
       </div>
       <div class="harden-body">
         <p class="harden-hint" id="harden-hint-json">Paste the complete configuration below into <code>appsettings.json</code>. It includes <code>ModelMapping</code> and <code>Classifier</code>. After restarting the gateway, it becomes the base default. Then use “Reset All Overrides” on the main panel to clear runtime settings.</p>
-        <p class="harden-hint" id="harden-hint-env" hidden>Paste the complete snippet below into the docker-compose service’s <code>environment:</code> section. It includes <code>ModelMapping__Rules__*</code> and <code>Classifier__TargetModel</code>. Restart the container to apply it.</p>
+        <p class="harden-hint" id="harden-hint-env" hidden>Paste the complete snippet below into the docker-compose service’s <code>environment:</code> section. It includes <code>ModelMapping__Rules__*</code> and <code>Classifier__Target</code>, <code>Classifier__Backend</code>, and <code>Classifier__ProxyServer</code>. Restart the container to apply it.</p>
         <div class="seg" role="tablist" aria-label="Configuration format">
           <button type="button" class="seg-btn active" id="harden-fmt-json" aria-pressed="true">appsettings.json</button>
           <button type="button" class="seg-btn" id="harden-fmt-env" aria-pressed="false">docker-compose env</button>
@@ -281,6 +296,6 @@
   <!-- ══════════════ TOASTS ══════════════ -->
   <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
 
-  <script src="app.js?v=classifier-export-20260816" defer></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
