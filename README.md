@@ -78,7 +78,7 @@ Restart the gateway or container after hardening. Then use **Reset All Overrides
 ## Behavior and known limitations
 
 - **`target` may be empty:** an empty `target` means “match this prefix but keep the original model name unchanged (do not rewrite).” `PATCH` and `PUT` behave consistently; the field is optional.
-- **Named backends:** each mapping and classifier route has an independent `backend` field. The UI discovers names from loaded routes and always offers `openrouter` as the default when a mapping omits `Backend`.
+- **Named backends:** each mapping and classifier route has an independent `backend` field. The UI loads the current backend names from `GET /admin/backends`, merges any names already present in loaded routes, and always offers `openrouter` as the default when a mapping omits `Backend`.
 - **Classifier route:** `/admin/classifier` uses `target`, `backend`, and `proxyServer` independently; an empty `target` disables the classifier route and does not consult mapping rules.
 - **Prefixes containing `/`:** the request path uses `encodeURIComponent`, so no manual escaping is required.
 - **Empty prefix (catch-all):** because `PATCH` cannot address it, the frontend uses a complete `PUT`; the page always places the catch-all rule at the end (the backend uses first-match-wins).
@@ -89,5 +89,6 @@ Restart the gateway or container after hardening. Then use **Reset All Overrides
 ## Backend contract
 
 - `GET/PUT /admin/mappings`, `GET/PATCH/DELETE /admin/mappings/{prefix}` (requires `x-admin-key`)
+- `GET /admin/backends` (requires `x-admin-key`; returns backend names for selectors)
 - `GET /health` (no authentication required)
 - camelCase fields: `prefix` / `target` / `backend` / `proxyServer` for mappings and `target` / `backend` / `proxyServer` for classifier responses; all admin requests require `x-admin-key`

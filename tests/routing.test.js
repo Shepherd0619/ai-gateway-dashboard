@@ -37,6 +37,18 @@ test('exports backend and independent classifier route', () => {
   assert.equal(JSON.stringify(output).includes('TargetModel'), false);
 });
 
+test('reads backend names from supported discovery response shapes', () => {
+  assert.deepEqual(routing.normalizeBackendNames(['openrouter', 'lmstudio']), ['openrouter', 'lmstudio']);
+  assert.deepEqual(routing.normalizeBackendNames({ backends: ['lmstudio'] }), ['lmstudio']);
+  assert.deepEqual(routing.normalizeBackendNames({ Backends: { openrouter: {}, lmstudio: {} } }), ['openrouter', 'lmstudio']);
+});
+
+test('merges live backend names with route names and openrouter', () => {
+  assert.deepEqual(routing.collectBackendNames([{ backend: 'lmstudio' }], { backend: 'ollama' }, ['azure']), [
+    'openrouter', 'azure', 'lmstudio', 'ollama',
+  ]);
+});
+
 test('collects backend and proxy choices dynamically', () => {
   assert.deepEqual(routing.collectBackendNames([{ backend: 'lmstudio' }], { backend: 'ollama' }), [
     'openrouter', 'lmstudio', 'ollama',

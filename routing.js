@@ -65,8 +65,22 @@ function buildHardenConfig(rules, classifier) {
   };
 }
 
-function collectBackendNames(rules, classifier) {
+function normalizeBackendNames(response) {
+  var names = response;
+  if (response && !Array.isArray(response)) {
+    if (Array.isArray(response.backends)) names = response.backends;
+    else if (Array.isArray(response.Backends)) names = response.Backends;
+    else if (response.Backends && typeof response.Backends === 'object') names = Object.keys(response.Backends);
+    else names = [];
+  }
+  return Array.isArray(names) ? names.filter(function (name) { return typeof name === 'string' && name; }) : [];
+}
+
+function collectBackendNames(rules, classifier, liveBackends) {
   var names = ['openrouter'];
+  (liveBackends || []).forEach(function (backend) {
+    if (backend && names.indexOf(backend) === -1) names.push(backend);
+  });
   (rules || []).forEach(function (rule) {
     var backend = normalizeRule(rule).backend;
     if (backend && names.indexOf(backend) === -1) names.push(backend);
@@ -97,6 +111,7 @@ export {
   buildMappingPatch,
   buildClassifierPut,
   buildHardenConfig,
+  normalizeBackendNames,
   collectBackendNames,
   collectProxyNames,
 };

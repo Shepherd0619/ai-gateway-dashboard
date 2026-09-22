@@ -14,6 +14,7 @@ import * as Routing from './routing.js';
   const state = loadState();
   let currentRules = [];
   let classifierConfig = null;
+  let liveBackends = [];
   let editingPrefix = null;   // non-null => edit mode (original prefix)
   let editingGwId = null;     // non-null => editing an existing gateway
   let confirmCallback = null;
@@ -113,6 +114,7 @@ import * as Routing from './routing.js';
 
   const Api = {
     listMappings: () => api('GET', '/admin/mappings'),
+    listBackends: () => api('GET', '/admin/backends'),
     health: () => api('GET', '/health', { requireKey: false }),
     proxyHealth: () => api('GET', '/admin/proxy-health'),
     upsert: (prefix, target, backend, proxyServer) =>
@@ -276,7 +278,7 @@ import * as Routing from './routing.js';
   }
 
   function refreshRouteChoices() {
-    const backends = Routing.collectBackendNames(currentRules, classifierConfig);
+    const backends = Routing.collectBackendNames(currentRules, classifierConfig, liveBackends);
     const proxies = Routing.collectProxyNames(currentRules, classifierConfig);
     populateSelect('f-backend', backends, null, 'Backend default (openrouter)', true);
     populateSelect('f-proxy', proxies, null, 'Direct / none');
@@ -359,6 +361,16 @@ import * as Routing from './routing.js';
   }
 
   /* ── data loading ─────────────────────────────────────── */
+  async function loadBackends() {
+    try {
+      const { data } = await Api.listBackends();
+      liveBackends = Routing.normalizeBackendNames(data);
+    } catch (err) {
+      liveBackends = [];
+    }
+    refreshRouteChoices();
+  }
+
   async function loadClassifier() {
     const gw = activeGateway();
     if (!gw) {
@@ -382,7 +394,7 @@ import * as Routing from './routing.js';
     const config = classifierConfig || {};
     refreshRouteChoices();
     document.getElementById('f-classifier-target').value = config.target || '';
-    populateSelect('f-classifier-backend', Routing.collectBackendNames(currentRules, classifierConfig), config.backend || '', 'No backend', true);
+    populateSelect('f-classifier-backend', Routing.collectBackendNames(currentRules, classifierConfig, liveBackends), config.backend || '', 'No backend', true);
     populateSelect('f-classifier-proxy', Routing.collectProxyNames(currentRules, classifierConfig), config.proxyServer || '', 'Direct / none');
     document.getElementById('classifier-form-error').hidden = true;
     openModal('classifier-modal');
@@ -562,6 +574,7 @@ import * as Routing from './routing.js';
     loadRules();
     loadHealth();
     loadClassifier();
+    loadBackends();
   }
 
   /* ── toasts ───────────────────────────────────────────── */
@@ -601,7 +614,7 @@ import * as Routing from './routing.js';
     document.getElementById('f-prefix').value = mode === 'edit' ? (rule.prefix == null ? '' : rule.prefix) : '';
     refreshRouteChoices();
     document.getElementById('f-target').value = mode === 'edit' ? (rule.target == null ? '' : rule.target) : '';
-    populateSelect('f-backend', Routing.collectBackendNames(currentRules, classifierConfig), mode === 'edit' ? (rule.backend || 'openrouter') : 'openrouter', 'Backend default (openrouter)', true);
+    populateSelect('f-backend', Routing.collectBackendNames(currentRules, classifierConfig, liveBackends), mode === 'edit' ? (rule.backend || 'openrouter') : 'openrouter', 'Backend default (openrouter)', true);
     populateSelect('f-proxy', Routing.collectProxyNames(currentRules, classifierConfig), mode === 'edit' ? (rule.proxyServer || '') : '', 'Direct / none');
     document.getElementById('f-index').value = '';
 
