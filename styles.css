@@ -326,6 +326,7 @@ input::placeholder { color: var(--muted); }
 
 .col-idx { width: 46px; color: var(--muted); }
 .col-actions { width: 210px; text-align: right; }
+.col-backend { width: 150px; color: var(--amber); }
 .col-proxy { width: 180px; }
 
 .cell-prefix {
@@ -632,8 +633,8 @@ form { padding: 20px; }
 @media (max-width: 720px) {
   .topbar { flex-direction: column; align-items: stretch; }
   .topbar-right { justify-content: flex-start; }
-  .col-proxy { display: none; }
-  .rules-table thead th.col-proxy { display: none; }
+  .col-backend, .col-proxy { display: none; }
+  .rules-table thead th.col-backend, .rules-table thead th.col-proxy { display: none; }
   .gw-form-row { flex-direction: column; }
   .panel-head { flex-direction: column; align-items: stretch; }
   .panel-actions { justify-content: flex-end; }
