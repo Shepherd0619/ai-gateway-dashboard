@@ -105,6 +105,26 @@ function collectProxyNames(rules, classifier) {
   return names;
 }
 
+function buildHardenEnvLines(rules, classifier) {
+  var lines = [];
+  (rules || []).forEach(function (rule, index) {
+    var normalized = normalizeRule(rule);
+    lines.push('      - ModelMapping__Rules__' + index + '__Prefix=' + normalized.prefix);
+    lines.push('      - ModelMapping__Rules__' + index + '__Target=' + normalized.target);
+    lines.push('      - ModelMapping__Rules__' + index + '__Backend=' + normalized.backend);
+    if (normalized.proxyServer !== null && normalized.proxyServer !== undefined) {
+      lines.push('      - ModelMapping__Rules__' + index + '__ProxyServer=' + normalized.proxyServer);
+    }
+  });
+  var normalizedClassifier = normalizeClassifier(classifier) || {};
+  lines.push('      - Classifier__Target=' + (normalizedClassifier.target || ''));
+  lines.push('      - Classifier__Backend=' + (normalizedClassifier.backend || ''));
+  if (normalizedClassifier.proxyServer !== null && normalizedClassifier.proxyServer !== undefined) {
+    lines.push('      - Classifier__ProxyServer=' + normalizedClassifier.proxyServer);
+  }
+  return lines;
+}
+
 export {
   normalizeRule,
   normalizeClassifier,
@@ -114,4 +134,5 @@ export {
   normalizeBackendNames,
   collectBackendNames,
   collectProxyNames,
+  buildHardenEnvLines,
 };

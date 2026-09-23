@@ -90,3 +90,37 @@ test('collects backend and proxy choices dynamically', () => {
     'corp', 'edge',
   ]);
 });
+
+test('exports Compose env without conflating inherited and direct proxy states', () => {
+  assert.deepEqual(routing.buildHardenEnvLines([
+    { prefix: 'inherit', target: 'model-a', backend: 'openrouter', proxyServer: null },
+    { prefix: 'direct', target: 'model-b', backend: 'openrouter', proxyServer: '' },
+    { prefix: 'named', target: 'model-c', backend: 'openrouter', proxyServer: 'corp' },
+  ], { target: 'classifier', backend: 'openrouter', proxyServer: null }), [
+    '      - ModelMapping__Rules__0__Prefix=inherit',
+    '      - ModelMapping__Rules__0__Target=model-a',
+    '      - ModelMapping__Rules__0__Backend=openrouter',
+    '      - ModelMapping__Rules__1__Prefix=direct',
+    '      - ModelMapping__Rules__1__Target=model-b',
+    '      - ModelMapping__Rules__1__Backend=openrouter',
+    '      - ModelMapping__Rules__1__ProxyServer=',
+    '      - ModelMapping__Rules__2__Prefix=named',
+    '      - ModelMapping__Rules__2__Target=model-c',
+    '      - ModelMapping__Rules__2__Backend=openrouter',
+    '      - ModelMapping__Rules__2__ProxyServer=corp',
+    '      - Classifier__Target=classifier',
+    '      - Classifier__Backend=openrouter',
+  ]);
+});
+
+test('exports an empty classifier proxy override in Compose env', () => {
+  assert.equal(routing.buildHardenEnvLines([], { target: 'classifier', backend: 'openrouter', proxyServer: '' }).at(-1),
+    '      - Classifier__ProxyServer=');
+});
+
+test('preserves disabled classifier target and backend in Compose env', () => {
+  assert.deepEqual(routing.buildHardenEnvLines([], { target: null, backend: null, proxyServer: null }), [
+    '      - Classifier__Target=',
+    '      - Classifier__Backend=',
+  ]);
+});

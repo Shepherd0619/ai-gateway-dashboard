@@ -902,19 +902,7 @@ import * as Routing from './routing.js';
   }
 
   function buildHardenEnvSnippet() {
-    const lines = ['environment:'];
-    currentRules.forEach((r, i) => {
-      const rule = normalizeRule(r);
-      lines.push('      - ModelMapping__Rules__' + i + '__Prefix=' + rule.prefix);
-      lines.push('      - ModelMapping__Rules__' + i + '__Target=' + rule.target);
-      lines.push('      - ModelMapping__Rules__' + i + '__Backend=' + rule.backend);
-      lines.push('      - ModelMapping__Rules__' + i + '__ProxyServer=' + (rule.proxyServer || ''));
-    });
-    const classifier = Routing.normalizeClassifier(classifierConfig) || {};
-    lines.push('      - Classifier__Target=' + (classifier.target || ''));
-    lines.push('      - Classifier__Backend=' + (classifier.backend || ''));
-    lines.push('      - Classifier__ProxyServer=' + (classifier.proxyServer || ''));
-    return lines.join('\n');
+    return ['environment:', ...Routing.buildHardenEnvLines(currentRules, classifierConfig)].join('\n');
   }
 
   function renderHarden() {
