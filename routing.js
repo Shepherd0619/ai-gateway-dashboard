@@ -9,7 +9,7 @@ function normalizeRule(rule) {
     prefix: valueOf(rule, 'prefix', 'Prefix', ''),
     target: valueOf(rule, 'target', 'Target', ''),
     backend: valueOf(rule, 'backend', 'Backend', 'openrouter') || 'openrouter',
-    proxyServer: valueOf(rule, 'proxyServer', 'ProxyServer', null) || null,
+    proxyServer: valueOf(rule, 'proxyServer', 'ProxyServer', null),
   };
 }
 
@@ -18,7 +18,7 @@ function normalizeClassifier(config) {
   return {
     target: valueOf(config, 'target', 'Target', null),
     backend: valueOf(config, 'backend', 'Backend', null),
-    proxyServer: valueOf(config, 'proxyServer', 'ProxyServer', null) || null,
+    proxyServer: valueOf(config, 'proxyServer', 'ProxyServer', null),
     source: valueOf(config, 'source', 'Source', 'base'),
   };
 }
@@ -27,7 +27,7 @@ function buildMappingPatch(route) {
   return {
     target: route.target || '',
     backend: route.backend || null,
-    proxyServer: route.proxyServer || null,
+    proxyServer: route.proxyServer == null ? null : route.proxyServer,
   };
 }
 
@@ -36,7 +36,7 @@ function buildClassifierPut(route) {
   return {
     target: target,
     backend: target ? (route.backend || null) : null,
-    proxyServer: target ? (route.proxyServer || null) : null,
+    proxyServer: target ? (route.proxyServer == null ? null : route.proxyServer) : null,
   };
 }
 
@@ -56,7 +56,7 @@ function buildHardenConfig(rules, classifier) {
     Classifier: classifier ? {
       Target: classifier.target || null,
       Backend: classifier.backend || null,
-      ProxyServer: classifier.proxyServer || null,
+      ProxyServer: classifier.proxyServer == null ? null : classifier.proxyServer,
     } : {
       Target: null,
       Backend: null,
@@ -93,7 +93,7 @@ function collectBackendNames(rules, classifier, liveBackends) {
 }
 
 function collectProxyNames(rules, classifier) {
-  var names = [''];
+  var names = [];
   (rules || []).forEach(function (rule) {
     var proxy = normalizeRule(rule).proxyServer;
     if (proxy && names.indexOf(proxy) === -1) names.push(proxy);

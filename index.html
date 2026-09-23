@@ -126,7 +126,7 @@
         <div class="form-field">
           <label class="field-label" for="f-classifier-proxy">PROXY SERVER</label>
           <select id="f-classifier-proxy" aria-label="Classifier proxy server"></select>
-          <p class="field-hint">Empty means direct; the name must exist in the backend ProxyServers configuration.</p>
+          <p class="field-hint">Inherit leaves the proxy undecided; Direct explicitly disables proxy inheritance; a selected name uses that proxy.</p>
         </div>
         <div class="form-error" id="classifier-form-error" hidden></div>
         <div class="modal-actions">
@@ -166,7 +166,7 @@
         <div class="form-field">
           <label class="field-label" for="f-proxy">PROXY SERVER</label>
           <select id="f-proxy" name="proxyServer" aria-label="Mapping proxy server"></select>
-          <p class="field-hint">Empty means direct; a selected name must exist in the ProxyServers configuration, otherwise the API returns 400.</p>
+          <p class="field-hint">Inherit leaves the proxy undecided; Direct explicitly disables proxy inheritance; a selected name must exist in the ProxyServers configuration.</p>
         </div>
         <div class="form-field">
           <label class="field-label" for="f-index">Position INDEX</label>

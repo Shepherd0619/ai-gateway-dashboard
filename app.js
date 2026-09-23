@@ -59,6 +59,12 @@ import * as Routing from './routing.js';
     return node;
   }
 
+  function proxyDisplayValue(proxyServer) {
+    if (proxyServer == null) return 'INHERIT';
+    if (proxyServer === '') return 'DIRECT';
+    return proxyServer;
+  }
+
   class ApiError extends Error {
     constructor(message, status, kind) {
       super(message);
@@ -193,7 +199,7 @@ import * as Routing from './routing.js';
       const prefix = r.prefix == null ? '' : r.prefix;
       const target = r.target == null ? '' : r.target;
       const backend = r.backend || 'openrouter';
-      const proxy = r.proxyServer || '';
+      const proxy = r.proxyServer;
       const catchall = prefix === '';
 
       const tr = document.createElement('tr');
@@ -214,9 +220,8 @@ import * as Routing from './routing.js';
 
       const tdBackend = el('td', 'col-backend cell-mono', backend);
 
-      const tdProxy = el('td', 'col-proxy cell-mono');
-      if (proxy) tdProxy.textContent = proxy;
-      else tdProxy.appendChild(el('span', 'proxy-none', '—'));
+      const tdProxy = el('td', 'col-proxy cell-mono', proxyDisplayValue(proxy));
+      if (proxy == null || proxy === '') tdProxy.classList.add('proxy-none');
 
       const tdActions = el('td', 'col-actions');
       const rowActions = el('div', 'row-actions');
@@ -252,6 +257,17 @@ import * as Routing from './routing.js';
     return Routing.normalizeRule(r);
   }
 
+  const PROXY_INHERIT = '__proxy_inherit__';
+
+  function proxySelectValue(proxyServer) {
+    return proxyServer == null ? PROXY_INHERIT : proxyServer;
+  }
+
+  function proxyValueFromSelect(id) {
+    const value = document.getElementById(id).value;
+    return value === PROXY_INHERIT ? null : value;
+  }
+
   function populateSelect(id, values, selected, emptyLabel, allowEmpty) {
     const select = document.getElementById(id);
     if (!select) return;
@@ -277,13 +293,45 @@ import * as Routing from './routing.js';
     select.value = selected == null ? '' : selected;
   }
 
+  function populateProxySelect(id, values, selected) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    select.replaceChildren();
+
+    const inherit = document.createElement('option');
+    inherit.value = PROXY_INHERIT;
+    inherit.textContent = 'Inherit / no decision';
+    select.appendChild(inherit);
+
+    const direct = document.createElement('option');
+    direct.value = '';
+    direct.textContent = 'Direct / disable proxy';
+    select.appendChild(direct);
+
+    values.forEach((value) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+    });
+
+    if (selected != null && selected !== '' && values.indexOf(selected) === -1) {
+      const option = document.createElement('option');
+      option.value = selected;
+      option.textContent = selected + ' (current)';
+      select.appendChild(option);
+    }
+
+    select.value = proxySelectValue(selected);
+  }
+
   function refreshRouteChoices() {
     const backends = Routing.collectBackendNames(currentRules, classifierConfig, liveBackends);
     const proxies = Routing.collectProxyNames(currentRules, classifierConfig);
     populateSelect('f-backend', backends, null, 'Backend default (openrouter)', true);
-    populateSelect('f-proxy', proxies, null, 'Direct / none');
+    populateProxySelect('f-proxy', proxies, null);
     populateSelect('f-classifier-backend', backends, null, 'No backend', true);
-    populateSelect('f-classifier-proxy', proxies, null, 'Direct / none');
+    populateProxySelect('f-classifier-proxy', proxies, null);
   }
 
   async function reorderRule(index, dir) {
@@ -344,7 +392,7 @@ import * as Routing from './routing.js';
     const rows = [
       ['TARGET', config.target || '(disabled)'],
       ['BACKEND', config.backend || '—'],
-      ['PROXY SERVER', config.proxyServer || 'DIRECT'],
+      ['PROXY SERVER', proxyDisplayValue(config.proxyServer)],
       ['SOURCE', (config.source || 'base').toUpperCase()],
     ];
     rows.forEach(([label, value]) => {
@@ -395,7 +443,7 @@ import * as Routing from './routing.js';
     refreshRouteChoices();
     document.getElementById('f-classifier-target').value = config.target || '';
     populateSelect('f-classifier-backend', Routing.collectBackendNames(currentRules, classifierConfig, liveBackends), config.backend || '', 'No backend', true);
-    populateSelect('f-classifier-proxy', Routing.collectProxyNames(currentRules, classifierConfig), config.proxyServer || '', 'Direct / none');
+    populateProxySelect('f-classifier-proxy', Routing.collectProxyNames(currentRules, classifierConfig), config.proxyServer);
     document.getElementById('classifier-form-error').hidden = true;
     openModal('classifier-modal');
     document.getElementById('f-classifier-target').focus();
@@ -407,7 +455,7 @@ import * as Routing from './routing.js';
     const btn = document.getElementById('classifier-submit');
     const target = document.getElementById('f-classifier-target').value.trim();
     const backend = target ? (document.getElementById('f-classifier-backend').value || null) : null;
-    const proxyServer = target ? (document.getElementById('f-classifier-proxy').value || null) : null;
+    const proxyServer = target ? proxyValueFromSelect('f-classifier-proxy') : null;
     btn.disabled = true;
     btn.textContent = 'Saving…';
     try {
@@ -615,7 +663,7 @@ import * as Routing from './routing.js';
     refreshRouteChoices();
     document.getElementById('f-target').value = mode === 'edit' ? (rule.target == null ? '' : rule.target) : '';
     populateSelect('f-backend', Routing.collectBackendNames(currentRules, classifierConfig, liveBackends), mode === 'edit' ? (rule.backend || 'openrouter') : 'openrouter', 'Backend default (openrouter)', true);
-    populateSelect('f-proxy', Routing.collectProxyNames(currentRules, classifierConfig), mode === 'edit' ? (rule.proxyServer || '') : '', 'Direct / none');
+    populateProxySelect('f-proxy', Routing.collectProxyNames(currentRules, classifierConfig), mode === 'edit' ? rule.proxyServer : null);
     document.getElementById('f-index').value = '';
 
     const idxHint = document.getElementById('f-index-hint');
@@ -643,7 +691,7 @@ import * as Routing from './routing.js';
       prefix: document.getElementById('f-prefix').value.trim(),
       target: document.getElementById('f-target').value.trim(),
       backend: document.getElementById('f-backend').value || null,
-      proxyServer: document.getElementById('f-proxy').value || null,
+      proxyServer: proxyValueFromSelect('f-proxy'),
     };
   }
 

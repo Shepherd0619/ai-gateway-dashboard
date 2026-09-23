@@ -20,6 +20,39 @@ test('builds an independent classifier PUT with Target, not TargetModel', () => 
   assert.equal(JSON.stringify(body).includes('TargetModel'), false);
 });
 
+test('preserves null, empty, and named proxy states when normalizing', () => {
+  for (const proxyServer of [null, '', 'corp']) {
+    assert.equal(routing.normalizeRule({ proxyServer }).proxyServer, proxyServer);
+    assert.equal(routing.normalizeClassifier({ proxyServer }).proxyServer, proxyServer);
+  }
+});
+
+test('builds mapping PATCH bodies for all proxy states', () => {
+  for (const proxyServer of [null, '', 'corp']) {
+    assert.deepEqual(routing.buildMappingPatch({ target: 'model', backend: 'lmstudio', proxyServer }), {
+      target: 'model', backend: 'lmstudio', proxyServer,
+    });
+  }
+});
+
+test('builds classifier PUT bodies for all enabled proxy states', () => {
+  for (const proxyServer of [null, '', 'corp']) {
+    assert.deepEqual(routing.buildClassifierPut({ target: 'classifier', backend: 'lmstudio', proxyServer }), {
+      target: 'classifier', backend: 'lmstudio', proxyServer,
+    });
+  }
+});
+
+test('exports an explicit direct proxy override as an empty string', () => {
+  assert.deepEqual(routing.buildHardenConfig([
+    { prefix: 'claude', target: 'model', backend: 'lmstudio', proxyServer: '' },
+  ], { target: 'classifier', backend: 'lmstudio', proxyServer: '' }), {
+    ModelMapping: { Rules: [{ Prefix: 'claude', Target: 'model', Backend: 'lmstudio', ProxyServer: '' }] },
+    Classifier: { Target: 'classifier', Backend: 'lmstudio', ProxyServer: '' },
+  });
+});
+
+
 test('clearing classifier target produces a fully disabled route', () => {
   assert.deepEqual(routing.buildClassifierPut({ target: '', backend: 'lmstudio', proxyServer: 'corp' }), {
     target: null, backend: null, proxyServer: null,
@@ -54,6 +87,6 @@ test('collects backend and proxy choices dynamically', () => {
     'openrouter', 'lmstudio', 'ollama',
   ]);
   assert.deepEqual(routing.collectProxyNames([{ proxyServer: 'corp' }], { proxyServer: 'edge' }), [
-    '', 'corp', 'edge',
+    'corp', 'edge',
   ]);
 });
