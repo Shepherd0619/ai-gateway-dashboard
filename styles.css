@@ -436,6 +436,7 @@ input::placeholder { color: var(--muted); }
   animation: modalIn 0.22s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 .modal-wide { width: 620px; }
+#proxy-modal .modal-wide { width: 1040px; }
 
 .modal-head {
   display: flex;
@@ -527,14 +528,24 @@ form { padding: 20px; }
 .seg-btn:hover { color: var(--text); }
 .seg-btn.active { background: var(--amber-dim); color: var(--amber); }
 
-/* ── proxy health matrix ── */
+/* ── upstream reachability ── */
 .proxy-body { padding: 0 0 4px; }
-.proxy-table .col-status { width: 170px; }
-.proxy-table .col-latency { width: 100px; }
+.health-note { margin: 0 20px 14px; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+.health-section { padding: 4px 0 14px; }
+.health-section h4 { margin: 0 20px 10px; color: var(--text-dim); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+.proxy-health-section { border-top: 1px solid var(--border); padding-top: 16px; }
+.proxy-health-section .health-note { margin-bottom: 10px; }
+.health-table-wrap { overflow-x: auto; }
+.proxy-table .col-status { width: 150px; }
+.proxy-table .col-latency { width: 90px; }
+.backend-health-table .col-status { width: 130px; }
+.backend-health-table .col-latency { width: 80px; }
+.backend-upstream { max-width: 320px; overflow-wrap: anywhere; color: var(--blue); font-size: 11.5px; }
 .proxy-status { display: inline-flex; align-items: center; gap: 8px; }
 .proxy-status .led { width: 8px; height: 8px; }
 .proxy-loading { color: var(--muted); padding: 24px 16px; }
-.proxy-err { color: var(--red); }
+.proxy-err, .health-error { color: var(--red); }
+.health-error { margin: 0 20px 10px; font-size: 12px; }
 .proxy-empty-hint { color: var(--muted); }
 
 /* ── gateway manager ── */

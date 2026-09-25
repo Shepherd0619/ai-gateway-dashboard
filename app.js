@@ -1,4 +1,5 @@
 import * as Routing from './routing.js';
+import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js';
 
 /* ═══════════════════════════════════════════════════════════
    AI GATEWAY · RUNTIME MAPPING CONSOLE — app logic
@@ -108,20 +109,18 @@ import * as Routing from './routing.js';
       throw new ApiError('Network error: unable to connect to ' + gw.baseUrl, null, 'network');
     }
 
-    let data = null;
-    try { data = await res.json(); } catch (e) { data = null; }
-
-    if (!res.ok) {
-      const msg = (data && data.error) ? data.error : ('HTTP ' + res.status);
-      throw new ApiError(msg, res.status);
+    const result = await readApiResponse(res, opts.allowNonOkStatus);
+    if (!result.ok) {
+      const msg = (result.data && result.data.error) ? result.data.error : ('HTTP ' + result.status);
+      throw new ApiError(msg, result.status);
     }
-    return { status: res.status, data: data };
+    return result;
   }
 
   const Api = {
     listMappings: () => api('GET', '/admin/mappings'),
     listBackends: () => api('GET', '/admin/backends'),
-    health: () => api('GET', '/health', { requireKey: false }),
+    health: () => api('GET', '/health', { requireKey: false, allowNonOkStatus: 503 }),
     proxyHealth: () => api('GET', '/admin/proxy-health'),
     upsert: (prefix, target, backend, proxyServer) =>
       api('PATCH', '/admin/mappings/' + encodeURIComponent(prefix), {
@@ -498,18 +497,62 @@ import * as Routing from './routing.js';
     setHealth('idle', '…');
     try {
       const { data } = await Api.health();
-      if (data && data.status === 'healthy') {
-        setHealth('ok', 'HEALTHY · ' + (data.latency_ms != null ? data.latency_ms + 'ms' : '—'));
-      } else {
-        setHealth('bad', 'UNHEALTHY');
-      }
+      const summary = getHealthSummary(data);
+      setHealth(summary.state, summary.text);
     } catch (e) {
-      setHealth('bad', 'UNREACHABLE');
+      setHealth('bad', 'CHECK FAILED');
     }
   }
 
   function proxyStatusLed(status) {
     return el('span', 'led led-' + (status === 'healthy' ? 'ok' : status === 'idle' ? 'idle' : 'bad'));
+  }
+
+  function renderHealthRows(rows, loading, errorMessage) {
+    const tbody = document.getElementById('backend-health-body');
+    const empty = document.getElementById('backend-health-empty');
+    const error = document.getElementById('backend-health-error');
+    tbody.replaceChildren();
+    empty.hidden = true;
+    error.hidden = !errorMessage;
+    error.textContent = errorMessage || '';
+
+    if (loading) {
+      const tr = el('tr');
+      const td = el('td', 'proxy-loading', 'Checking upstream network reachability…');
+      td.colSpan = 5;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+    if (errorMessage) return;
+
+    if (!rows.length) {
+      empty.hidden = false;
+      return;
+    }
+
+    rows.forEach((backend) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', 'cell-mono', backend.name));
+
+      const upstream = el('td', 'backend-upstream cell-mono', backend.upstream || '—');
+      upstream.title = backend.upstream || '';
+      tr.appendChild(upstream);
+
+      const statusCell = el('td', 'col-status');
+      const status = el('span', 'proxy-status');
+      status.appendChild(proxyStatusLed(backend.status));
+      status.appendChild(el('span', null, backend.status === 'healthy' ? 'REACHABLE' : 'UNREACHABLE'));
+      statusCell.appendChild(status);
+      tr.appendChild(statusCell);
+
+      tr.appendChild(el('td', 'col-latency cell-mono', backend.latency_ms != null ? backend.latency_ms + 'ms' : '—'));
+      const errorCell = el('td', 'col-error', backend.error || '—');
+      if (backend.error) errorCell.classList.add('proxy-err');
+      tr.appendChild(errorCell);
+      tbody.appendChild(tr);
+    });
   }
 
   function renderProxyHealth(rows, emptyMessage) {
@@ -548,47 +591,48 @@ import * as Routing from './routing.js';
   }
 
   async function loadProxyHealth() {
-    const tbody = document.getElementById('proxy-body');
-    const empty = document.getElementById('proxy-empty');
-    empty.hidden = true;
-    tbody.replaceChildren();
-
-    const tr = el('tr');
-    const td = el('td', 'proxy-loading');
-    td.colSpan = 4;
-    td.textContent = 'Testing…';
-    tr.appendChild(td);
-    tbody.appendChild(tr);
+    renderHealthRows([], true);
+    const proxyBody = document.getElementById('proxy-body');
+    proxyBody.replaceChildren();
+    const loadingRow = el('tr');
+    const loadingCell = el('td', 'proxy-loading', 'Testing proxy servers…');
+    loadingCell.colSpan = 4;
+    loadingRow.appendChild(loadingCell);
+    proxyBody.appendChild(loadingRow);
 
     const gw = activeGateway();
-    if (!gw) { renderProxyHealth([], 'Select a gateway first.'); return; }
+    if (!gw) {
+      renderHealthRows([], false, 'Select a gateway first.');
+      renderProxyHealth([], 'Select a gateway first.');
+      return;
+    }
 
-    const [direct, proxies] = await Promise.all([
-      Api.health().then(({ data }) => ({
-        name: 'Direct',
-        status: data && data.status === 'healthy' ? 'healthy' : 'unhealthy',
-        latency_ms: data ? data.latency_ms : null,
-        error: data && data.error ? data.error : null,
-      })).catch((err) => ({
-        name: 'Direct',
-        status: 'unhealthy',
-        latency_ms: null,
-        error: friendlyError(err),
-      })),
-      Api.proxyHealth().then(({ data }) => (Array.isArray(data) ? data : []))
-        .catch((err) => [{
-          name: 'Proxy',
-          status: 'unhealthy',
-          latency_ms: null,
-          error: friendlyError(err),
-        }]),
+    const [healthResult, proxyResult] = await Promise.allSettled([
+      Api.health(),
+      Api.proxyHealth(),
     ]);
 
-    renderProxyHealth([direct, ...proxies]);
+    if (healthResult.status === 'fulfilled') {
+      const health = healthResult.value.data;
+      const summary = getHealthSummary(health);
+      setHealth(summary.state, summary.text);
+      const rows = getBackendHealthRows(health);
+      renderHealthRows(rows);
+      if (!rows.length) {
+        document.getElementById('backend-health-empty-sub').textContent = 'No backends are configured for network reachability checks.';
+      }
+    } else {
+      renderHealthRows([], false, friendlyError(healthResult.reason));
+    }
 
-    if (proxies.length === 0) {
+    const proxies = proxyResult.status === 'fulfilled'
+      ? (Array.isArray(proxyResult.value.data) ? proxyResult.value.data : [])
+      : [{ name: 'Proxy', status: 'unhealthy', latency_ms: null, error: friendlyError(proxyResult.reason) }];
+    renderProxyHealth(proxies);
+
+    if (proxyResult.status === 'fulfilled' && proxies.length === 0) {
       const hintTr = el('tr');
-      const hintTd = el('td', 'proxy-empty-hint', 'No proxies to test · the backend has no ProxyServers configured (the ProxyServers section is empty).');
+      const hintTd = el('td', 'proxy-empty-hint', 'No proxy servers are configured.');
       hintTd.colSpan = 4;
       hintTr.appendChild(hintTd);
       document.getElementById('proxy-body').appendChild(hintTr);

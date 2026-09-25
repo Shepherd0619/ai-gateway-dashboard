@@ -30,10 +30,10 @@
         </div>
       </div>
 
-      <div class="health" id="health" title="Click to view proxy health matrix">
+      <div class="health" id="health" title="Click to view backend network reachability">
         <span class="led led-idle" id="health-led"></span>
         <div class="health-meta">
-          <span class="health-label">DIRECT</span>
+          <span class="health-label">UPSTREAM REACHABILITY</span>
           <span class="health-text" id="health-text">—</span>
         </div>
         <span class="health-chevron" aria-hidden="true">▾</span>
@@ -260,31 +260,60 @@
     </div>
   </div>
 
-  <!-- ══════════════ PROXY HEALTH MODAL ══════════════ -->
+  <!-- ══════════════ UPSTREAM REACHABILITY MODAL ══════════════ -->
   <div class="modal" id="proxy-modal" hidden>
     <div class="modal-backdrop" data-close="proxy-modal"></div>
     <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="proxy-modal-title">
       <div class="modal-head">
-        <h3 id="proxy-modal-title">Proxy Health</h3>
+        <h3 id="proxy-modal-title">Upstream Network Reachability</h3>
         <button class="modal-close" data-close="proxy-modal" aria-label="Close">×</button>
       </div>
       <div class="proxy-body">
-        <table class="rules-table proxy-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th class="col-status">STATUS</th>
-              <th class="col-latency">LATENCY</th>
-              <th class="col-error">ERROR</th>
-            </tr>
-          </thead>
-          <tbody id="proxy-body"></tbody>
-        </table>
-        <div class="empty" id="proxy-empty" hidden>
-          <div class="empty-glyph" aria-hidden="true">∅</div>
-          <p class="empty-title">No proxies to test</p>
-          <p class="empty-sub" id="proxy-empty-sub"></p>
-        </div>
+        <p class="health-note">Each configured backend is checked independently with an HTTP HEAD request. Any HTTP response means the upstream is network-reachable; this does not verify credentials, API compatibility, model availability, or inference.</p>
+        <section class="health-section" aria-labelledby="backend-health-title">
+          <h4 id="backend-health-title">Backend Upstreams</h4>
+          <div class="health-error" id="backend-health-error" role="status" hidden></div>
+          <div class="health-table-wrap">
+            <table class="rules-table proxy-table backend-health-table">
+              <thead>
+                <tr>
+                  <th>BACKEND</th>
+                  <th>UPSTREAM URL</th>
+                  <th class="col-status">NETWORK</th>
+                  <th class="col-latency">LATENCY</th>
+                  <th class="col-error">ERROR</th>
+                </tr>
+              </thead>
+              <tbody id="backend-health-body"></tbody>
+            </table>
+          </div>
+          <div class="empty" id="backend-health-empty" hidden>
+            <p class="empty-title">No backend results</p>
+            <p class="empty-sub" id="backend-health-empty-sub">No backends are configured for network reachability checks.</p>
+          </div>
+        </section>
+        <section class="health-section proxy-health-section" aria-labelledby="proxy-health-title">
+          <h4 id="proxy-health-title">Proxy Server Health</h4>
+          <p class="health-note">Independent connectivity checks for configured ProxyServers; these results are separate from backend upstream reachability.</p>
+          <div class="health-table-wrap">
+            <table class="rules-table proxy-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th class="col-status">STATUS</th>
+                  <th class="col-latency">LATENCY</th>
+                  <th class="col-error">ERROR</th>
+                </tr>
+              </thead>
+              <tbody id="proxy-body"></tbody>
+            </table>
+          </div>
+          <div class="empty" id="proxy-empty" hidden>
+            <div class="empty-glyph" aria-hidden="true">∅</div>
+            <p class="empty-title">No proxy servers to test</p>
+            <p class="empty-sub" id="proxy-empty-sub"></p>
+          </div>
+        </section>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" data-close="proxy-modal">Close</button>
