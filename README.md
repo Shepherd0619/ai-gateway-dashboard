@@ -86,9 +86,17 @@ Restart the gateway or container after hardening. Then use **Reset All Overrides
 - **Reordering / entering an index uses a complete `PUT`:** this writes the current complete list, including base rules, as runtime overrides. Later changes to a same-named base rule in `appsettings.json` will be hidden by the runtime override; use **Harden Configuration + Reset All Overrides** to reconcile them.
 - **`PUT` replaces rather than merges:** it is used for reordering, **Reset All Overrides**, and empty-prefix operations. A normal single-rule edit still uses `PATCH`.
 
+## Model discovery catalog
+
+Use the **Model Discovery** panel to see the selected gateway's discovery status and effective model count, and **Manage Catalog** to edit its shared administrator-maintained catalog returned by `/v1/models`. The catalog has an enabled flag and model entries with a required `id` plus optional `displayName`, `ownedBy`, and `createdAt`. The dialog accepts `createdAt` in local `YYYY-MM-DDTHH:mm` date/time format using the browser picker or manual entry; leaving it blank sets it to the current time when saving. A successful save closes the dialog; errors keep it open. Catalog entries do not create routing mappings.
+
+Saving the list stores each displayed model as a runtime entry. The backend merges runtime entries before configured base entries by case-insensitive model ID. A runtime entry replaces a matching base entry; unshadowed base entries remain in the effective catalog. Removing a row in the dialog therefore does not hide a matching base model, and later base-config changes to a listed ID remain masked by its runtime copy. **Restore Base Configuration** sends DELETE to discard all runtime discovery overrides and return to the configured baseline; it does not delete that baseline.
+
 ## Backend contract
 
 - `GET/PUT /admin/mappings`, `GET/PATCH/DELETE /admin/mappings/{prefix}` (requires `x-admin-key`)
 - `GET /admin/backends` (requires `x-admin-key`; returns backend names for selectors)
+- `GET/PUT/DELETE /admin/model-discovery` (requires `x-admin-key`; GET returns `{ enabled, models }`; PUT replaces runtime discovery settings and returns the effective merged view; DELETE removes the runtime override and restores the configured baseline)
+- Each model entry uses `id` (required), with optional `displayName`, `ownedBy`, and ISO-8601 `createdAt`.
 - `GET /health` (no authentication required)
 - camelCase fields: `prefix` / `target` / `backend` / `proxyServer` for mappings and `target` / `backend` / `proxyServer` for classifier responses; all admin requests require `x-admin-key`

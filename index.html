@@ -101,6 +101,33 @@
         <div class="classifier-loading">Loading…</div>
       </div>
     </section>
+
+    <section class="panel model-discovery-panel" aria-labelledby="model-discovery-panel-title">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="model-discovery-panel-title">MODEL DISCOVERY</h2>
+          <span class="panel-hint">SHARED CATALOG · GET /v1/models</span>
+        </div>
+        <button id="model-discovery-btn" class="btn btn-primary">Manage Catalog</button>
+      </div>
+      <div class="model-discovery-summary" id="model-discovery-summary" aria-live="polite">
+        <div class="model-discovery-metric">
+          <span class="field-label">STATUS</span>
+          <span id="model-discovery-summary-status" class="model-discovery-state loading">Loading…</span>
+        </div>
+        <div class="model-discovery-metric">
+          <span class="field-label">EFFECTIVE MODELS</span>
+          <span id="model-discovery-summary-count" class="model-discovery-value">—</span>
+        </div>
+        <div class="model-discovery-metric">
+          <span class="field-label">VIEW</span>
+          <span id="model-discovery-summary-source" class="model-discovery-value">Loading</span>
+        </div>
+      </div>
+      <footer class="panel-foot">
+        <span id="model-discovery-summary-note">Runtime entries override matching base IDs; unshadowed base models remain. This catalog does not create routing mappings.</span>
+      </footer>
+    </section>
   </main>
 
   <!-- ══════════════ CLASSIFIER MODAL ══════════════ -->
@@ -134,6 +161,42 @@
           <button type="submit" class="btn btn-primary" id="classifier-submit">Save</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ══════════════ MODEL DISCOVERY MODAL ══════════════ -->
+  <div class="modal" id="model-discovery-modal" hidden>
+    <div class="modal-backdrop" data-close="model-discovery-modal"></div>
+    <div class="modal-card modal-wide model-discovery-card" role="dialog" aria-modal="true" aria-labelledby="model-discovery-title">
+      <div class="modal-head">
+        <h3 id="model-discovery-title">Model Discovery Catalog</h3>
+        <button class="modal-close" data-close="model-discovery-modal" aria-label="Close">×</button>
+      </div>
+      <div class="model-discovery-body">
+        <div class="model-discovery-toolbar">
+          <div>
+            <span class="field-label">MODEL DISCOVERY</span>
+            <p class="field-hint">Manage the shared model catalog returned by <code>GET /v1/models</code>.</p>
+          </div>
+          <label class="toggle-field" for="model-discovery-enabled">
+            <input id="model-discovery-enabled" type="checkbox" />
+            <span>Enabled</span>
+          </label>
+        </div>
+        <div class="model-discovery-status" id="model-discovery-status" role="status" hidden></div>
+        <div class="form-error" id="model-discovery-error" role="alert" hidden></div>
+        <div class="model-discovery-list" id="model-discovery-list"></div>
+        <button type="button" class="btn btn-ghost model-discovery-add" id="model-discovery-add">＋ Add Model</button>
+        <p class="model-discovery-note">Saving this list stores every displayed model as a runtime entry. Runtime entries override matching base IDs (case-insensitive); removing a row here does not hide a matching base model. Later base-config changes to listed IDs will be masked until you restore the base configuration. Model discovery does not create routing mappings.</p>
+        <p class="model-discovery-note">Created at uses your local date and time (<code>YYYY-MM-DDTHH:mm</code>). Use the picker or enter the value manually. Leave it blank to use the current date and time when saving.</p>
+      </div>
+      <div class="modal-actions model-discovery-actions">
+        <button type="button" class="btn btn-danger-ghost" id="model-discovery-restore">Restore Base Configuration</button>
+        <div class="model-discovery-action-right">
+          <button type="button" class="btn btn-ghost" data-close="model-discovery-modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="model-discovery-save">Save Catalog</button>
+        </div>
+      </div>
     </div>
   </div>
 
