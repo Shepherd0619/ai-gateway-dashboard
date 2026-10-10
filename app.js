@@ -1,4 +1,5 @@
 import * as Routing from './routing.js';
+import * as ModelDiscovery from './model-discovery.js';
 import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js';
 
 /* ═══════════════════════════════════════════════════════════
@@ -20,6 +21,10 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
   let editingGwId = null;     // non-null => editing an existing gateway
   let confirmCallback = null;
   let hardenFormat = 'json';  // 'json' | 'env'
+  let modelDiscoveryDraft = null;
+  let modelDiscoveryGatewayId = null;
+  let modelDiscoveryBusy = false;
+  let modelDiscoverySummary = null;
 
   function loadState() {
     try {
@@ -120,6 +125,9 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
   const Api = {
     listMappings: () => api('GET', '/admin/mappings'),
     listBackends: () => api('GET', '/admin/backends'),
+    getModelDiscovery: () => api('GET', '/admin/model-discovery'),
+    setModelDiscovery: (settings) => api('PUT', '/admin/model-discovery', { body: settings }),
+    resetModelDiscovery: () => api('DELETE', '/admin/model-discovery'),
     health: () => api('GET', '/health', { requireKey: false, allowNonOkStatus: 503 }),
     proxyHealth: () => api('GET', '/admin/proxy-health'),
     upsert: (prefix, target, backend, proxyServer) =>
@@ -667,6 +675,24 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     loadHealth();
     loadClassifier();
     loadBackends();
+    loadModelDiscoverySummary();
+  }
+
+  async function loadModelDiscoverySummary() {
+    const gwId = state.activeGatewayId;
+    renderModelDiscoverySummary(null);
+    if (!activeGateway()) {
+      renderModelDiscoverySummary(null, 'No gateway selected');
+      return;
+    }
+    try {
+      const { data } = await Api.getModelDiscovery();
+      if (gwId !== state.activeGatewayId) return;
+      if (!ModelDiscovery.canApplyModelDiscoveryResponse(data)) throw new Error('Invalid catalog response');
+      renderModelDiscoverySummary(ModelDiscovery.normalizeModelDiscovery(data));
+    } catch (err) {
+      if (gwId === state.activeGatewayId) renderModelDiscoverySummary(null, friendlyError(err));
+    }
   }
 
   /* ── toasts ───────────────────────────────────────────── */
@@ -1012,6 +1038,206 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     }
   }
 
+  /* ── model discovery catalog ──────────────────────────── */
+  function renderModelDiscoverySummary(value, error) {
+    modelDiscoverySummary = error ? null : value;
+    const summary = ModelDiscovery.summarizeModelDiscovery(modelDiscoverySummary);
+    const status = document.getElementById('model-discovery-summary-status');
+    status.textContent = error || summary.status;
+    status.className = 'model-discovery-state ' + (error ? 'error' : summary.state);
+    document.getElementById('model-discovery-summary-count').textContent = error ? '—' : summary.modelCount;
+    document.getElementById('model-discovery-summary-source').textContent = error ? 'Unavailable' : summary.source;
+  }
+
+  function setModelDiscoveryStatus(message) {
+    const status = document.getElementById('model-discovery-status');
+    status.textContent = message || '';
+    status.hidden = !message;
+  }
+
+  function setModelDiscoveryBusy(busy) {
+    modelDiscoveryBusy = busy;
+    const canEdit = ModelDiscovery.canEditModelDiscovery(modelDiscoveryDraft, busy);
+    document.getElementById('model-discovery-save').disabled = !canEdit;
+    document.getElementById('model-discovery-restore').disabled = !canEdit;
+    document.getElementById('model-discovery-add').disabled = !canEdit;
+    document.getElementById('model-discovery-enabled').disabled = !canEdit;
+    document.querySelectorAll('#model-discovery-list input, #model-discovery-list button').forEach((control) => {
+      control.disabled = !canEdit;
+    });
+  }
+
+  function renderModelDiscovery() {
+    const list = document.getElementById('model-discovery-list');
+    list.replaceChildren();
+    document.getElementById('model-discovery-enabled').checked = !!(modelDiscoveryDraft && modelDiscoveryDraft.enabled);
+    const models = modelDiscoveryDraft ? modelDiscoveryDraft.models : [];
+    if (modelDiscoveryDraft && models.length === 0) list.appendChild(el('div', 'model-discovery-empty', 'No model entries. Add a model or save an empty catalog.'));
+    else if (!modelDiscoveryDraft) list.appendChild(el('div', 'model-discovery-empty', 'Catalog is unavailable until settings load successfully.'));
+
+    models.forEach((model, index) => {
+      const entry = el('section', 'model-entry');
+      entry.setAttribute('data-model-index', String(index));
+      const heading = el('div', 'model-entry-head');
+      heading.appendChild(el('strong', '', 'Model ' + (index + 1)));
+      const remove = el('button', 'link-btn danger', 'Remove');
+      remove.type = 'button';
+      remove.setAttribute('data-model-remove', String(index));
+      heading.appendChild(remove);
+      entry.appendChild(heading);
+
+      const fields = el('div', 'model-entry-fields');
+      const definitions = [
+        ['id', 'ID', 'text', model.id, 'Required model identifier'],
+        ['displayName', 'DISPLAY NAME', 'text', model.displayName || '', 'Optional public display name'],
+        ['ownedBy', 'OWNED BY', 'text', model.ownedBy || '', 'Optional provider or organization'],
+        ['createdAt', 'CREATED AT', 'datetime-local', ModelDiscovery.toLocalDateTimeInput(model.createdAt), 'Local time · blank uses current time on save'],
+      ];
+      definitions.forEach(([name, label, type, value, hint]) => {
+        const field = el('label', 'model-entry-field');
+        field.appendChild(el('span', 'field-label', label + (name === 'id' ? ' *' : '')));
+        const input = document.createElement('input');
+        input.type = type;
+        input.name = name;
+        input.value = value;
+        input.autocomplete = 'off';
+        if (name === 'id') input.required = true;
+        field.appendChild(input);
+        field.appendChild(el('span', 'field-hint', hint));
+        fields.appendChild(field);
+      });
+      entry.appendChild(fields);
+      list.appendChild(entry);
+    });
+    setModelDiscoveryBusy(modelDiscoveryBusy);
+  }
+
+  function readModelDiscoveryDraft() {
+    const models = Array.from(document.querySelectorAll('#model-discovery-list [data-model-index]')).map((entry) => {
+      const value = (name) => entry.querySelector(`[name="${name}"]`).value;
+      return {
+        id: value('id'),
+        displayName: value('displayName'),
+        ownedBy: value('ownedBy'),
+        createdAt: value('createdAt'),
+      };
+    });
+    return { enabled: document.getElementById('model-discovery-enabled').checked, models };
+  }
+
+  function showModelDiscoveryError(message) {
+    const error = document.getElementById('model-discovery-error');
+    error.textContent = message || '';
+    error.hidden = !message;
+  }
+
+  async function loadModelDiscovery() {
+    modelDiscoveryGatewayId = state.activeGatewayId;
+    modelDiscoveryDraft = null;
+    showModelDiscoveryError('');
+    setModelDiscoveryStatus('Loading model discovery settings…');
+    setModelDiscoveryBusy(true);
+    renderModelDiscovery();
+    openModal('model-discovery-modal');
+    try {
+      const { data } = await Api.getModelDiscovery();
+      if (modelDiscoveryGatewayId !== state.activeGatewayId) throw new Error('The selected gateway changed. Close and reopen this dialog to load its catalog.');
+      if (!ModelDiscovery.canApplyModelDiscoveryResponse(data)) throw new Error('The gateway returned an invalid model discovery response.');
+      modelDiscoveryDraft = ModelDiscovery.normalizeModelDiscovery(data);
+      renderModelDiscoverySummary(modelDiscoveryDraft);
+      setModelDiscoveryStatus('Loaded effective catalog for ' + ((activeGateway() && activeGateway().name) || 'selected gateway') + '.');
+      renderModelDiscovery();
+    } catch (err) {
+      modelDiscoveryDraft = null;
+      renderModelDiscoverySummary(null, friendlyError(err));
+      showModelDiscoveryError(err.name === 'ApiError' ? friendlyError(err) : err.message);
+      setModelDiscoveryStatus('Unable to load catalog.');
+      renderModelDiscovery();
+      document.getElementById('model-discovery-save').disabled = true;
+      document.getElementById('model-discovery-add').disabled = true;
+      document.getElementById('model-discovery-enabled').disabled = true;
+    } finally {
+      setModelDiscoveryBusy(false);
+      if (document.getElementById('model-discovery-error').hidden) renderModelDiscovery();
+      else {
+        document.getElementById('model-discovery-save').disabled = true;
+        document.getElementById('model-discovery-add').disabled = true;
+        document.getElementById('model-discovery-enabled').disabled = true;
+      }
+    }
+  }
+
+  async function handleModelDiscoverySave() {
+    if (!ModelDiscovery.canEditModelDiscovery(modelDiscoveryDraft, modelDiscoveryBusy)) return;
+    if (modelDiscoveryGatewayId !== state.activeGatewayId) {
+      showModelDiscoveryError('The selected gateway changed. Close and reopen this dialog before saving.');
+      return;
+    }
+    const draft = readModelDiscoveryDraft();
+    const validationError = ModelDiscovery.validateModelDiscoveryDraft(draft.models);
+    if (validationError) {
+      showModelDiscoveryError(validationError);
+      return;
+    }
+    modelDiscoveryDraft = draft;
+    showModelDiscoveryError('');
+    setModelDiscoveryStatus('Saving model discovery settings…');
+    setModelDiscoveryBusy(true);
+    try {
+      const payload = ModelDiscovery.buildModelDiscoveryPut(draft);
+      const { data } = await Api.setModelDiscovery(payload);
+      if (!ModelDiscovery.canApplyModelDiscoveryResponse(data)) throw new Error('The gateway saved settings but returned an invalid model discovery response.');
+      modelDiscoveryDraft = ModelDiscovery.normalizeModelDiscovery(data);
+      renderModelDiscoverySummary(modelDiscoveryDraft);
+      closeModal('model-discovery-modal');
+      toast('Model discovery catalog saved', 'success');
+    } catch (err) {
+      showModelDiscoveryError(friendlyError(err));
+      setModelDiscoveryStatus('Save failed.');
+    } finally {
+      setModelDiscoveryBusy(false);
+    }
+  }
+
+  async function handleModelDiscoveryRestore() {
+    if (!ModelDiscovery.canEditModelDiscovery(modelDiscoveryDraft, modelDiscoveryBusy)) return;
+    if (modelDiscoveryGatewayId !== state.activeGatewayId) {
+      showModelDiscoveryError('The selected gateway changed. Close and reopen this dialog before restoring.');
+      return;
+    }
+    confirmModal({
+      title: 'Restore Base Model Catalog',
+      body: 'This discards the runtime model-discovery override for the selected gateway and restores its configured baseline. It does not delete baseline models.',
+      okText: 'Restore Base',
+      onConfirm: async () => {
+        if (!ModelDiscovery.canEditModelDiscovery(modelDiscoveryDraft, modelDiscoveryBusy) || modelDiscoveryGatewayId !== state.activeGatewayId) {
+          showModelDiscoveryError('The selected gateway changed. Close and reopen this dialog before restoring.');
+          return;
+        }
+        showModelDiscoveryError('');
+        setModelDiscoveryStatus('Restoring base configuration…');
+        setModelDiscoveryBusy(true);
+        try {
+          await Api.resetModelDiscovery();
+          const { data } = await Api.getModelDiscovery();
+          if (!ModelDiscovery.canApplyModelDiscoveryResponse(data)) throw new Error('The gateway restored settings but returned an invalid model discovery response.');
+          modelDiscoveryDraft = ModelDiscovery.normalizeModelDiscovery(data);
+          renderModelDiscoverySummary(modelDiscoveryDraft);
+          renderModelDiscovery();
+          setModelDiscoveryStatus('Base configuration restored. Showing the effective catalog.');
+          toast('Base model catalog restored', 'success');
+        } catch (err) {
+          modelDiscoveryDraft = null;
+          renderModelDiscovery();
+          showModelDiscoveryError(friendlyError(err));
+          setModelDiscoveryStatus('Restore failed or could not be reloaded.');
+        } finally {
+          setModelDiscoveryBusy(false);
+        }
+      },
+    });
+  }
+
   /* ── event wiring ─────────────────────────────────────── */
   function init() {
     renderGatewaySelect();
@@ -1022,7 +1248,42 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
       persist(state);
       renderGwList();
       loadAll();
+      if (!document.getElementById('model-discovery-modal').hidden) {
+        modelDiscoveryDraft = null;
+        showModelDiscoveryError('The selected gateway changed. Close and reopen this dialog to load its catalog.');
+        setModelDiscoveryStatus('Catalog not loaded for the newly selected gateway.');
+        setModelDiscoveryBusy(true);
+      }
     });
+
+    document.getElementById('model-discovery-btn').addEventListener('click', loadModelDiscovery);
+    document.getElementById('model-discovery-add').addEventListener('click', () => {
+      if (!modelDiscoveryDraft || modelDiscoveryBusy) return;
+      modelDiscoveryDraft = readModelDiscoveryDraft();
+      modelDiscoveryDraft.models.push({ id: '', displayName: '', ownedBy: '', createdAt: '' });
+      showModelDiscoveryError('');
+      renderModelDiscovery();
+      const lastId = document.querySelector('#model-discovery-list [data-model-index]:last-child [name="id"]');
+      if (lastId) lastId.focus();
+    });
+    document.getElementById('model-discovery-list').addEventListener('click', (event) => {
+      const remove = event.target.closest('[data-model-remove]');
+      if (!remove || !modelDiscoveryDraft || modelDiscoveryBusy) return;
+      modelDiscoveryDraft = readModelDiscoveryDraft();
+      modelDiscoveryDraft.models.splice(Number(remove.getAttribute('data-model-remove')), 1);
+      renderModelDiscovery();
+    });
+    document.getElementById('model-discovery-list').addEventListener('input', () => {
+      if (modelDiscoveryDraft && !modelDiscoveryBusy) {
+        modelDiscoveryDraft = readModelDiscoveryDraft();
+        showModelDiscoveryError('');
+      }
+    });
+    document.getElementById('model-discovery-enabled').addEventListener('change', () => {
+      if (modelDiscoveryDraft && !modelDiscoveryBusy) modelDiscoveryDraft.enabled = document.getElementById('model-discovery-enabled').checked;
+    });
+    document.getElementById('model-discovery-save').addEventListener('click', handleModelDiscoverySave);
+    document.getElementById('model-discovery-restore').addEventListener('click', handleModelDiscoveryRestore);
 
     document.getElementById('manage-gateways-btn').addEventListener('click', () => {
       resetGwForm();
@@ -1089,13 +1350,20 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
         return;
       }
 
-      const actBtn = e.target.closest('[data-gw-activate]');
-      if (actBtn) {
-        state.activeGatewayId = actBtn.getAttribute('data-gw-activate');
+      const activateBtn = e.target.closest('[data-gw-activate]');
+      if (activateBtn) {
+        state.activeGatewayId = activateBtn.getAttribute('data-gw-activate');
         persist(state);
         renderGatewaySelect();
         renderGwList();
         loadAll();
+        if (!document.getElementById('model-discovery-modal').hidden) {
+          modelDiscoveryDraft = null;
+          modelDiscoveryGatewayId = state.activeGatewayId;
+          showModelDiscoveryError('The selected gateway changed. Close and reopen this dialog to load its catalog.');
+          setModelDiscoveryStatus('Catalog not loaded for the newly selected gateway.');
+          setModelDiscoveryBusy(true);
+        }
         return;
       }
 
@@ -1108,7 +1376,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        ['rule-modal', 'gateway-modal', 'confirm-modal', 'proxy-modal'].forEach(closeModal);
+        ['rule-modal', 'gateway-modal', 'confirm-modal', 'proxy-modal', 'model-discovery-modal'].forEach(closeModal);
       }
     });
 
