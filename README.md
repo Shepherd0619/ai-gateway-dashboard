@@ -70,8 +70,10 @@ Reordering submits the **complete effective list** through `PUT /admin/mappings`
 
 Use the harden dialog to turn the current effective rules into base defaults. The dialog provides two export formats:
 
-- **appsettings.json:** generates a `ModelMapping:Rules` snippet containing each rule’s `Prefix`, `Target`, `Backend`, and `ProxyServer`, plus the independent classifier `Target`, `Backend`, and `ProxyServer` route.
-- **docker-compose env:** generates an `environment:` variable snippet (`ModelMapping__Rules__{i}__Prefix/Target/Backend/ProxyServer` and `Classifier__Target/Backend/ProxyServer`) for the service’s `environment:` section. Environment variables override `ModelMapping:Rules` by index.
+- **appsettings.json:** generates a `ModelMapping:Rules` snippet containing each rule’s `Prefix`, `Target`, `Backend`, and `ProxyServer`, the independent classifier `Target`, `Backend`, and `ProxyServer` route, and the selected gateway’s `ModelDiscovery:Enabled` and complete effective `ModelDiscovery:Models` catalog.
+- **docker-compose env:** generates an `environment:` variable snippet (`ModelMapping__Rules__{i}__Prefix/Target/Backend/ProxyServer`, `Classifier__Target/Backend/ProxyServer`, and `ModelDiscovery__Enabled` / `ModelDiscovery__Models__{i}__{Id,DisplayName,OwnedBy,CreatedAt}`) for the service’s `environment:` section. Environment variables override `ModelMapping:Rules` by index.
+
+The harden dialog refreshes Model Discovery before generating either format. The export includes the complete effective catalog, including base models merged into it; if catalog retrieval fails, the export is canceled rather than silently omitting Model Discovery.
 
 Restart the gateway or container after hardening. Then use **Reset All Overrides** in the panel to clear runtime state so the base configuration becomes the only source.
 

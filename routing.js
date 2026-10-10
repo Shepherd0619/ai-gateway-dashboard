@@ -40,8 +40,25 @@ function buildClassifierPut(route) {
   };
 }
 
-function buildHardenConfig(rules, classifier) {
+function normalizeModelDiscoveryForExport(modelDiscovery) {
+  var source = modelDiscovery && Array.isArray(modelDiscovery.models) ? modelDiscovery.models : [];
   return {
+    enabled: !!(modelDiscovery && modelDiscovery.enabled === true),
+    models: source.filter(function (model) {
+      return model && typeof model.id === 'string' && model.id.trim();
+    }).map(function (model) {
+      var normalized = { id: model.id.trim() };
+      ['displayName', 'ownedBy', 'createdAt'].forEach(function (field) {
+        if (typeof model[field] === 'string' && model[field].trim()) normalized[field] = model[field].trim();
+      });
+      return normalized;
+    }),
+  };
+}
+
+function buildHardenConfig(rules, classifier, modelDiscovery) {
+  var catalog = normalizeModelDiscoveryForExport(modelDiscovery);
+  var config = {
     ModelMapping: {
       Rules: (rules || []).map(function (rule) {
         var normalized = normalizeRule(rule);
@@ -63,6 +80,19 @@ function buildHardenConfig(rules, classifier) {
       ProxyServer: null,
     },
   };
+  if (modelDiscovery !== undefined) {
+    config.ModelDiscovery = {
+      Enabled: catalog.enabled,
+      Models: catalog.models.map(function (model) {
+        var exported = { Id: model.id };
+        if (model.displayName) exported.DisplayName = model.displayName;
+        if (model.ownedBy) exported.OwnedBy = model.ownedBy;
+        if (model.createdAt) exported.CreatedAt = model.createdAt;
+        return exported;
+      }),
+    };
+  }
+  return config;
 }
 
 function normalizeBackendNames(response) {
@@ -105,7 +135,8 @@ function collectProxyNames(rules, classifier) {
   return names;
 }
 
-function buildHardenEnvLines(rules, classifier) {
+function buildHardenEnvLines(rules, classifier, modelDiscovery) {
+  var catalog = normalizeModelDiscoveryForExport(modelDiscovery);
   var lines = [];
   (rules || []).forEach(function (rule, index) {
     var normalized = normalizeRule(rule);
@@ -121,6 +152,16 @@ function buildHardenEnvLines(rules, classifier) {
   lines.push('      - Classifier__Backend=' + (normalizedClassifier.backend || ''));
   if (normalizedClassifier.proxyServer !== null && normalizedClassifier.proxyServer !== undefined) {
     lines.push('      - Classifier__ProxyServer=' + normalizedClassifier.proxyServer);
+  }
+  if (modelDiscovery !== undefined) {
+    lines.push('      - ModelDiscovery__Enabled=' + catalog.enabled);
+    catalog.models.forEach(function (model, index) {
+      var prefix = '      - ModelDiscovery__Models__' + index + '__';
+      lines.push(prefix + 'Id=' + model.id);
+      if (model.displayName) lines.push(prefix + 'DisplayName=' + model.displayName);
+      if (model.ownedBy) lines.push(prefix + 'OwnedBy=' + model.ownedBy);
+      if (model.createdAt) lines.push(prefix + 'CreatedAt=' + model.createdAt);
+    });
   }
   return lines;
 }
