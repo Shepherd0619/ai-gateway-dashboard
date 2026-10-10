@@ -307,8 +307,8 @@
         <button class="modal-close" data-close="harden-modal" aria-label="Close">×</button>
       </div>
       <div class="harden-body">
-        <p class="harden-hint" id="harden-hint-json">Paste the complete configuration below into <code>appsettings.json</code>. It includes <code>ModelMapping</code> and <code>Classifier</code>. After restarting the gateway, it becomes the base default. Then use “Reset All Overrides” on the main panel to clear runtime settings.</p>
-        <p class="harden-hint" id="harden-hint-env" hidden>Paste the complete snippet below into the docker-compose service’s <code>environment:</code> section. It includes <code>ModelMapping__Rules__*</code> and <code>Classifier__Target</code>, <code>Classifier__Backend</code>, and <code>Classifier__ProxyServer</code>. Restart the container to apply it.</p>
+        <p class="harden-hint" id="harden-hint-json">Paste the complete configuration below into <code>appsettings.json</code>. It includes <code>ModelMapping</code>, <code>Classifier</code>, and the selected gateway’s complete effective <code>ModelDiscovery</code> catalog. After restarting the gateway, it becomes the base default. Then use “Reset All Overrides” on the main panel to clear runtime settings.</p>
+        <p class="harden-hint" id="harden-hint-env" hidden>Paste the complete snippet below into the docker-compose service’s <code>environment:</code> section. It includes <code>ModelMapping__Rules__*</code>, <code>Classifier__Target/Backend/ProxyServer</code>, and <code>ModelDiscovery__Enabled</code> / <code>ModelDiscovery__Models__*</code>. Restart the container to apply it.</p>
         <div class="seg" role="tablist" aria-label="Configuration format">
           <button type="button" class="seg-btn active" id="harden-fmt-json" aria-pressed="true">appsettings.json</button>
           <button type="button" class="seg-btn" id="harden-fmt-env" aria-pressed="false">docker-compose env</button>

@@ -124,3 +124,42 @@ test('preserves disabled classifier target and backend in Compose env', () => {
     '      - Classifier__Backend=',
   ]);
 });
+
+test('exports the complete model discovery catalog in appsettings shape', () => {
+  assert.deepEqual(routing.buildHardenConfig([], null, {
+    enabled: true,
+    models: [
+      { id: 'model-a', displayName: 'Model A', ownedBy: 'provider', createdAt: '2026-10-10T12:00:00Z' },
+      { id: 'model-b' },
+    ],
+  }), {
+    ModelMapping: { Rules: [] },
+    Classifier: { Target: null, Backend: null, ProxyServer: null },
+    ModelDiscovery: {
+      Enabled: true,
+      Models: [
+        { Id: 'model-a', DisplayName: 'Model A', OwnedBy: 'provider', CreatedAt: '2026-10-10T12:00:00Z' },
+        { Id: 'model-b' },
+      ],
+    },
+  });
+});
+
+test('exports model discovery as indexed Compose environment variables', () => {
+  assert.deepEqual(routing.buildHardenEnvLines([], null, {
+    enabled: false,
+    models: [
+      { id: 'model-a', displayName: 'Model A', ownedBy: 'provider', createdAt: '2026-10-10T12:00:00Z' },
+      { id: 'model-b' },
+    ],
+  }), [
+    '      - Classifier__Target=',
+    '      - Classifier__Backend=',
+    '      - ModelDiscovery__Enabled=false',
+    '      - ModelDiscovery__Models__0__Id=model-a',
+    '      - ModelDiscovery__Models__0__DisplayName=Model A',
+    '      - ModelDiscovery__Models__0__OwnedBy=provider',
+    '      - ModelDiscovery__Models__0__CreatedAt=2026-10-10T12:00:00Z',
+    '      - ModelDiscovery__Models__1__Id=model-b',
+  ]);
+});

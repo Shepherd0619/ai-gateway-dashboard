@@ -967,17 +967,21 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
   }
 
   /* ── harden / export ──────────────────────────────────── */
-  function buildHardenSnippet() {
-    return JSON.stringify(Routing.buildHardenConfig(currentRules, classifierConfig), null, 2);
+  let hardenModelDiscovery = null;
+
+  function buildHardenSnippet(modelDiscovery) {
+    return JSON.stringify(Routing.buildHardenConfig(currentRules, classifierConfig, modelDiscovery), null, 2);
   }
 
-  function buildHardenEnvSnippet() {
-    return ['environment:', ...Routing.buildHardenEnvLines(currentRules, classifierConfig)].join('\n');
+  function buildHardenEnvSnippet(modelDiscovery) {
+    return ['environment:', ...Routing.buildHardenEnvLines(currentRules, classifierConfig, modelDiscovery)].join('\n');
   }
 
   function renderHarden() {
     const isJson = hardenFormat === 'json';
-    document.getElementById('harden-output').value = isJson ? buildHardenSnippet() : buildHardenEnvSnippet();
+    document.getElementById('harden-output').value = isJson
+      ? buildHardenSnippet(hardenModelDiscovery)
+      : buildHardenEnvSnippet(hardenModelDiscovery);
     document.getElementById('harden-hint-json').hidden = !isJson;
     document.getElementById('harden-hint-env').hidden = isJson;
 
@@ -992,22 +996,37 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
   }
 
   async function openHardenModal() {
+    const gatewayId = state.activeGatewayId;
     if (!activeGateway()) {
       toast('Select a gateway first', 'warn');
       return;
     }
 
     // Refresh before generating the snippet so a page refresh or a slow API
-    // response cannot produce an export with a missing/stale classifier.
+    // response cannot produce an export with missing configuration.
     await loadClassifier();
     if (!currentRules.length && !classifierConfig) {
       toast('There is no configuration to harden', 'warn');
       return;
     }
-    renderHarden();
-    openModal('harden-modal');
-  }
 
+    try {
+      const { data } = await Api.getModelDiscovery();
+      if (gatewayId !== state.activeGatewayId) {
+        toast('The selected gateway changed. Reopen Harden Configuration to export its current settings.', 'warn');
+        return;
+      }
+      if (!ModelDiscovery.canApplyModelDiscoveryResponse(data)) {
+        toast('The gateway returned invalid model discovery settings. Configuration export was canceled.', 'error');
+        return;
+      }
+      hardenModelDiscovery = data;
+      renderHarden();
+      openModal('harden-modal');
+    } catch (err) {
+      toast(friendlyError(err), 'error');
+    }
+  }
   function downloadHarden() {
     const isJson = hardenFormat === 'json';
     const text = document.getElementById('harden-output').value;
