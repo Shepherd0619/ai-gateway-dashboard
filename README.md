@@ -4,6 +4,8 @@ A pure static admin page for viewing, adding, editing, and deleting AI Gateway m
 
 ## Files
 
+The **Tool Setup** link opens `tool-setup.html`, an English setup guide for Claude Code, OpenAI Codex, and Anthropic/OpenAI SDK clients. It reads the selected gateway's current model catalog and mappings, then regenerates examples with the active URL and models. Readers without a saved admin key use the public `/v1/models` catalog. See [Tool setup documentation](docs/tool-setup/README.md) for data sources and compatibility limits.
+
 | File | Description |
 |---|---|
 | `index.html` | Page structure |
