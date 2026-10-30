@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Gateway · Tool Setup</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="tool-setup.css" />
+</head>
+<body class="docs-page">
+  <div class="grain" aria-hidden="true"></div>
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="AI Gateway Console">
+      <div class="brand-mark" aria-hidden="true">
+        <span class="mark-dot"></span><span class="mark-dot"></span><span class="mark-dot"></span>
+      </div>
+      <div class="brand-text">
+        <span class="brand-title">AI&nbsp;GATEWAY</span>
+        <span class="brand-sub">MODEL ROUTING &amp; CLIENT SETUP</span>
+      </div>
+    </a>
+    <span class="page-context">Claude &amp; OpenAI · Client setup</span>
+  </header>
+  <nav class="site-nav" aria-label="Main navigation">
+    <div class="site-nav-links">
+      <a href="index.html">Console</a>
+      <a href="tool-setup.html" aria-current="page">Tool Setup</a>
+    </div>
+  </nav>
+  <div class="layout">
+    <aside class="sidebar">
+      <p class="nav-label">TOOL SETUP</p>
+      <nav id="doc-nav" aria-label="Documentation sections">
+        <a href="#claude-code">Claude Code <span>01</span></a>
+        <a href="#codex">OpenAI Codex <span>02</span></a>
+        <a href="#api">API Clients <span>03</span></a>
+        <a href="#models">Models &amp; Routing <span>04</span></a>
+      </nav>
+      <div class="sidebar-note"><span class="live-dot" aria-hidden="true"></span> Live gateway configuration<p>URLs, models, and routes update from the current production configuration.</p><a href="index.html">Manage gateways</a></div>
+    </aside>
+    <main>
+      <section class="connection panel" aria-labelledby="connection-title">
+        <div class="connection-top"><h2 id="connection-title">Connection settings</h2><span id="sync-time">Not synced</span></div>
+        <div class="connection-controls"><label>Current gateway<select id="docs-gateway"></select></label><button type="button" id="docs-refresh" class="btn btn-ghost">Refresh configuration <span aria-hidden="true">↻</span></button></div>
+        <p id="gateway-url" class="gateway-url"></p>
+        <p id="docs-status" role="status" aria-live="polite">Loading configuration…</p>
+        <p id="docs-warning" class="notice" hidden></p>
+        <div class="preferences">
+          <label>Claude model<select id="claude-model" disabled></select></label>
+          <label>OpenAI model<select id="openai-model" disabled></select></label>
+          <label>Shell<select id="docs-shell"><option value="powershell">PowerShell 7.1+</option><option value="bash">Bash</option><option value="zsh">Zsh</option></select></label>
+        </div>
+      </section>
+      <article id="doc-content" aria-busy="true"></article>
+      <footer>Use your own upstream API key. Configuration examples never include an admin key.</footer>
+    </main>
+  </div>
+  <div id="copy-status" class="copy-status" role="status" aria-live="polite"></div>
+  <script type="module" src="tool-setup.js"></script>
+</body>
+</html>
