@@ -56,7 +56,96 @@ function normalizeModelDiscoveryForExport(modelDiscovery) {
   };
 }
 
-function buildHardenConfig(rules, classifier, modelDiscovery) {
+function normalizeBackendTranslation(backend, index, fallbackName) {
+  if (!backend || typeof backend !== 'object' || Array.isArray(backend)) {
+    throw new Error('Backend translation at index ' + index + ' must be an object.');
+  }
+
+  var name = valueOf(backend, 'name', 'Name', fallbackName);
+  if (typeof name !== 'string') {
+    throw new Error('Backend translation at index ' + index + ' must have a valid backend name.');
+  }
+  if (name.trim().length === 0) {
+    throw new Error('Backend translation at index ' + index + ' must have a non-empty backend name.');
+  }
+
+  var translateAnthropicToOpenAI = valueOf(backend, 'translateAnthropicToOpenAI', 'TranslateAnthropicToOpenAI', undefined);
+  if (typeof translateAnthropicToOpenAI !== 'boolean') {
+    throw new Error('Backend translation for ' + name + ' must set translateAnthropicToOpenAI to a boolean.');
+  }
+
+  var openAIProtocol = valueOf(backend, 'openAIProtocol', 'OpenAIProtocol', undefined);
+  if (openAIProtocol !== 'ChatCompletions' && openAIProtocol !== 'Responses') {
+    throw new Error('Backend translation for ' + name + ' has invalid openAIProtocol; expected ChatCompletions or Responses.');
+  }
+
+  var reasoningFormat = valueOf(backend, 'reasoningFormat', 'ReasoningFormat', undefined);
+  if (reasoningFormat !== 'OpenAI' && reasoningFormat !== 'OpenRouter') {
+    throw new Error('Backend translation for ' + name + ' has invalid reasoningFormat; expected OpenAI or OpenRouter.');
+  }
+
+  var source = valueOf(backend, 'source', 'Source', undefined);
+  if (source !== 'base' && source !== 'runtime') {
+    throw new Error('Backend translation for ' + name + ' has invalid source; expected base or runtime.');
+  }
+
+  return {
+    name: name,
+    translateAnthropicToOpenAI: translateAnthropicToOpenAI,
+    openAIProtocol: openAIProtocol,
+    reasoningFormat: reasoningFormat,
+    source: source,
+  };
+}
+
+function normalizeBackendTranslationResponse(response) {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error('Backend translation response must contain a backends array.');
+  }
+  var backends = valueOf(response, 'backends', 'Backends', undefined);
+  if (!Array.isArray(backends)) {
+    throw new Error('Backend translation response must contain a backends array.');
+  }
+
+  var normalized = {};
+  var normalizedNames = new Set();
+  backends.forEach(function (backend, index) {
+    var settings = normalizeBackendTranslation(backend, index, undefined);
+    var nameKey = settings.name.toLowerCase();
+    if (normalizedNames.has(nameKey)) {
+      throw new Error('Duplicate backend translation name at index ' + index + ' (case-insensitive match).');
+    }
+    normalizedNames.add(nameKey);
+    Object.defineProperty(normalized, settings.name, {
+      value: settings,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  });
+  return normalized;
+}
+
+function normalizeBackendTranslationsForExport(backendTranslations) {
+  if (backendTranslations == null) return [];
+  if (typeof backendTranslations !== 'object' || Array.isArray(backendTranslations)) {
+    throw new Error('Backend translations for export must be an object keyed by backend name.');
+  }
+  return Object.keys(backendTranslations).map(function (name, index) {
+    return normalizeBackendTranslation(backendTranslations[name], index, name);
+  });
+}
+
+function validateComposeBackendName(name) {
+  var envKeyPrefix = 'Backends__' + name + '__';
+  var envKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+  if (name.indexOf('__') !== -1 || !envKeyPattern.test(envKeyPrefix + 'TranslateAnthropicToOpenAI') ||
+      !envKeyPattern.test(envKeyPrefix + 'OpenAIProtocol') || !envKeyPattern.test(envKeyPrefix + 'ReasoningFormat')) {
+    throw new Error('Backend name cannot safely map to a Compose environment key (Backends__{name}__...).');
+  }
+}
+
+function buildHardenConfig(rules, classifier, modelDiscovery, backendTranslations) {
   var catalog = normalizeModelDiscoveryForExport(modelDiscovery);
   var config = {
     ModelMapping: {
@@ -91,6 +180,21 @@ function buildHardenConfig(rules, classifier, modelDiscovery) {
         return exported;
       }),
     };
+  }
+  if (backendTranslations !== undefined) {
+    config.Backends = {};
+    normalizeBackendTranslationsForExport(backendTranslations).forEach(function (backend) {
+      Object.defineProperty(config.Backends, backend.name, {
+        value: {
+          TranslateAnthropicToOpenAI: backend.translateAnthropicToOpenAI,
+          OpenAIProtocol: backend.openAIProtocol,
+          ReasoningFormat: backend.reasoningFormat,
+        },
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    });
   }
   return config;
 }
@@ -135,7 +239,7 @@ function collectProxyNames(rules, classifier) {
   return names;
 }
 
-function buildHardenEnvLines(rules, classifier, modelDiscovery) {
+function buildHardenEnvLines(rules, classifier, modelDiscovery, backendTranslations) {
   var catalog = normalizeModelDiscoveryForExport(modelDiscovery);
   var lines = [];
   (rules || []).forEach(function (rule, index) {
@@ -163,6 +267,15 @@ function buildHardenEnvLines(rules, classifier, modelDiscovery) {
       if (model.createdAt) lines.push(prefix + 'CreatedAt=' + model.createdAt);
     });
   }
+  if (backendTranslations !== undefined) {
+    normalizeBackendTranslationsForExport(backendTranslations).forEach(function (backend) {
+      validateComposeBackendName(backend.name);
+      var prefix = '      - Backends__' + backend.name + '__';
+      lines.push(prefix + 'TranslateAnthropicToOpenAI=' + backend.translateAnthropicToOpenAI);
+      lines.push(prefix + 'OpenAIProtocol=' + backend.openAIProtocol);
+      lines.push(prefix + 'ReasoningFormat=' + backend.reasoningFormat);
+    });
+  }
   return lines;
 }
 
@@ -172,6 +285,7 @@ export {
   buildMappingPatch,
   buildClassifierPut,
   buildHardenConfig,
+  normalizeBackendTranslationResponse,
   normalizeBackendNames,
   collectBackendNames,
   collectProxyNames,

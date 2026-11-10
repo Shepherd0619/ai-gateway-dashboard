@@ -163,3 +163,220 @@ test('exports model discovery as indexed Compose environment variables', () => {
     '      - ModelDiscovery__Models__1__Id=model-b',
   ]);
 });
+
+test('normalizes multiple backend translation settings and preserves their sources', () => {
+  assert.deepEqual(routing.normalizeBackendTranslationResponse({ backends: [
+    {
+      name: 'openrouter',
+      translateAnthropicToOpenAI: true,
+      openAIProtocol: 'ChatCompletions',
+      reasoningFormat: 'OpenRouter',
+      source: 'base',
+    },
+    {
+      Name: 'lmstudio',
+      TranslateAnthropicToOpenAI: false,
+      OpenAIProtocol: 'Responses',
+      ReasoningFormat: 'OpenAI',
+      Source: 'runtime',
+    },
+  ] }), {
+    openrouter: {
+      name: 'openrouter',
+      translateAnthropicToOpenAI: true,
+      openAIProtocol: 'ChatCompletions',
+      reasoningFormat: 'OpenRouter',
+      source: 'base',
+    },
+    lmstudio: {
+      name: 'lmstudio',
+      translateAnthropicToOpenAI: false,
+      openAIProtocol: 'Responses',
+      reasoningFormat: 'OpenAI',
+      source: 'runtime',
+    },
+  });
+});
+
+test('normalizes an empty backend translation response to an empty map', () => {
+  assert.deepEqual(routing.normalizeBackendTranslationResponse({ backends: [] }), {});
+});
+
+test('preserves arbitrary configured backend names through normalization and JSON export', () => {
+  const name = ' Vendor / East: Production ';
+  const translations = routing.normalizeBackendTranslationResponse({ backends: [{
+    name,
+    translateAnthropicToOpenAI: true,
+    openAIProtocol: 'ChatCompletions',
+    reasoningFormat: 'OpenRouter',
+    source: 'base',
+  }] });
+  assert.equal(translations[name].name, name);
+  const backends = routing.buildHardenConfig([], null, undefined, translations).Backends;
+  assert.equal(Object.hasOwn(backends, name), true);
+  assert.deepEqual(backends[name], {
+    TranslateAnthropicToOpenAI: true,
+    OpenAIProtocol: 'ChatCompletions',
+    ReasoningFormat: 'OpenRouter',
+  });
+});
+
+test('preserves special object-property backend names in normalization and JSON export', () => {
+  const translations = routing.normalizeBackendTranslationResponse({ backends: [{
+    name: '__proto__',
+    translateAnthropicToOpenAI: true,
+    openAIProtocol: 'ChatCompletions',
+    reasoningFormat: 'OpenRouter',
+    source: 'base',
+  }] });
+  assert.equal(Object.hasOwn(translations, '__proto__'), true);
+  const backends = routing.buildHardenConfig([], null, undefined, translations).Backends;
+  assert.equal(Object.hasOwn(backends, '__proto__'), true);
+  assert.deepEqual(backends.__proto__, {
+    TranslateAnthropicToOpenAI: true,
+    OpenAIProtocol: 'ChatCompletions',
+    ReasoningFormat: 'OpenRouter',
+  });
+});
+
+test('rejects duplicate backend translation names case-insensitively', () => {
+  const settings = {
+    translateAnthropicToOpenAI: true,
+    openAIProtocol: 'ChatCompletions',
+    reasoningFormat: 'OpenRouter',
+    source: 'base',
+  };
+  assert.throws(() => routing.normalizeBackendTranslationResponse({ backends: [
+    { ...settings, name: 'OpenRouter' },
+    { ...settings, name: 'openrouter' },
+  ] }), /duplicate.*backend.*name/i);
+});
+
+test('rejects unsafe backend names only when building Compose environment keys', () => {
+  for (const name of ['backend__nested', 'backend\nother', 'backend.name', 'backend-name']) {
+    const translations = routing.normalizeBackendTranslationResponse({ backends: [{
+      name,
+      translateAnthropicToOpenAI: true,
+      openAIProtocol: 'ChatCompletions',
+      reasoningFormat: 'OpenRouter',
+      source: 'base',
+    }] });
+    assert.throws(
+      () => routing.buildHardenEnvLines([], null, undefined, translations),
+      /Compose.*environment.*key/i,
+    );
+  }
+});
+
+test('rejects invalid backend translation response shapes with a useful error', () => {
+  for (const response of [null, [], {}, { backends: {} }]) {
+    assert.throws(
+      () => routing.normalizeBackendTranslationResponse(response),
+      /backends.*array/i,
+    );
+  }
+});
+
+test('rejects missing or invalid backend translation names', () => {
+  for (const backend of [
+    { translateAnthropicToOpenAI: true, openAIProtocol: 'ChatCompletions', reasoningFormat: 'OpenRouter', source: 'base' },
+    { name: '', translateAnthropicToOpenAI: true, openAIProtocol: 'ChatCompletions', reasoningFormat: 'OpenRouter', source: 'base' },
+    { name: '  ', translateAnthropicToOpenAI: true, openAIProtocol: 'ChatCompletions', reasoningFormat: 'OpenRouter', source: 'base' },
+    { name: null, translateAnthropicToOpenAI: true, openAIProtocol: 'ChatCompletions', reasoningFormat: 'OpenRouter', source: 'base' },
+    { name: 7, translateAnthropicToOpenAI: true, openAIProtocol: 'ChatCompletions', reasoningFormat: 'OpenRouter', source: 'base' },
+  ]) {
+    assert.throws(() => routing.normalizeBackendTranslationResponse({ backends: [backend] }), /backend.*name/i);
+  }
+});
+
+test('rejects non-boolean backend translation enabled values', () => {
+  assert.throws(() => routing.normalizeBackendTranslationResponse({ backends: [{
+    name: 'openrouter', translateAnthropicToOpenAI: 'true', openAIProtocol: 'ChatCompletions',
+    reasoningFormat: 'OpenRouter', source: 'base',
+  }] }), /translateAnthropicToOpenAI.*boolean/i);
+});
+
+test('rejects unsupported backend translation protocol and reasoning formats', () => {
+  const backend = {
+    name: 'openrouter', translateAnthropicToOpenAI: true, openAIProtocol: 'ChatCompletions',
+    reasoningFormat: 'OpenRouter', source: 'base',
+  };
+  assert.throws(() => routing.normalizeBackendTranslationResponse({ backends: [{
+    ...backend, openAIProtocol: 'LegacyCompletions',
+  }] }), /openAIProtocol.*ChatCompletions.*Responses/i);
+  assert.throws(() => routing.normalizeBackendTranslationResponse({ backends: [{
+    ...backend, reasoningFormat: 'Unknown',
+  }] }), /reasoningFormat.*OpenAI.*OpenRouter/i);
+});
+
+test('rejects unsupported backend translation sources', () => {
+  assert.throws(() => routing.normalizeBackendTranslationResponse({ backends: [{
+    name: 'openrouter', translateAnthropicToOpenAI: true, openAIProtocol: 'ChatCompletions',
+    reasoningFormat: 'OpenRouter', source: 'other',
+  }] }), /source.*base.*runtime/i);
+});
+
+test('exports only approved backend translation fields in Harden JSON', () => {
+  const backendTranslations = {
+    openrouter: {
+      name: 'openrouter',
+      translateAnthropicToOpenAI: true,
+      openAIProtocol: 'ChatCompletions',
+      reasoningFormat: 'OpenRouter',
+      source: 'base',
+      baseUrl: 'https://private.example/v1',
+      apiKey: 'never-export-this',
+    },
+  };
+  const output = routing.buildHardenConfig([], null, undefined, backendTranslations);
+  assert.deepEqual(output, {
+    ModelMapping: { Rules: [] },
+    Classifier: { Target: null, Backend: null, ProxyServer: null },
+    Backends: {
+      openrouter: {
+        TranslateAnthropicToOpenAI: true,
+        OpenAIProtocol: 'ChatCompletions',
+        ReasoningFormat: 'OpenRouter',
+      },
+    },
+  });
+  assert.equal(JSON.stringify(output).includes('BaseUrl'), false);
+  assert.equal(JSON.stringify(output).includes('https://private.example/v1'), false);
+  assert.equal(JSON.stringify(output).includes('never-export-this'), false);
+});
+
+test('exports only approved backend translation fields in Compose env', () => {
+  const backendTranslations = {
+    openrouter: {
+      name: 'openrouter',
+      translateAnthropicToOpenAI: true,
+      openAIProtocol: 'ChatCompletions',
+      reasoningFormat: 'OpenRouter',
+      source: 'base',
+      baseUrl: 'https://private.example/v1',
+      apiKey: 'never-export-this',
+    },
+  };
+  const output = routing.buildHardenEnvLines([], null, undefined, backendTranslations);
+  assert.deepEqual(output, [
+    '      - Classifier__Target=',
+    '      - Classifier__Backend=',
+    '      - Backends__openrouter__TranslateAnthropicToOpenAI=true',
+    '      - Backends__openrouter__OpenAIProtocol=ChatCompletions',
+    '      - Backends__openrouter__ReasoningFormat=OpenRouter',
+  ]);
+  assert.equal(output.join('\n').includes('BaseUrl'), false);
+  assert.equal(output.join('\n').includes('https://private.example/v1'), false);
+  assert.equal(output.join('\n').includes('never-export-this'), false);
+});
+
+test('omitting backend translations keeps previous Harden export shapes unchanged', () => {
+  assert.deepEqual(routing.buildHardenConfig([], null), {
+    ModelMapping: { Rules: [] },
+    Classifier: { Target: null, Backend: null, ProxyServer: null },
+  });
+  assert.deepEqual(routing.buildHardenEnvLines([], null), [
+    '      - Classifier__Target=',
+    '      - Classifier__Backend=',
+  ]);
+});

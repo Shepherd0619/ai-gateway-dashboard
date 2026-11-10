@@ -1,4 +1,6 @@
 // Shared generation and read-only production configuration loading.
+import { normalizeBackendTranslationResponse } from './routing.js';
+
 export function normalizeGatewayUrl(value) {
   const url = new URL(String(value).trim());
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
@@ -20,6 +22,35 @@ export function resolveDocRoute(model, mappings) {
     target=rule.target;
   }
   return {target,backend};
+}
+
+export function resolveDocBackendTranslation(model, mappings, backendTranslations) {
+  const route=resolveDocRoute(model,mappings);
+  if (!route || !backendTranslations || typeof backendTranslations!=='object' || Array.isArray(backendTranslations)) return null;
+  const backendName=Object.keys(backendTranslations).find(name=>name.toLowerCase()===route.backend.toLowerCase());
+  if (backendName===undefined) return null;
+  const settings=backendTranslations[backendName];
+  if (!settings || typeof settings.translateAnthropicToOpenAI!=='boolean'
+    || !['ChatCompletions','Responses'].includes(settings.openAIProtocol)
+    || !['OpenAI','OpenRouter'].includes(settings.reasoningFormat)) return null;
+  return {
+    enabled:settings.translateAnthropicToOpenAI,
+    openAIProtocol:settings.openAIProtocol,
+    reasoningFormat:settings.reasoningFormat,
+  };
+}
+
+export function buildProtocolTranslationGuidance(status) {
+  let state;
+  if (status == null) {
+    state='The selected route’s backend translation status is unknown; settings are unavailable for the selected backend. Do not infer enabled or disabled from a model or backend name.';
+  } else if (status.enabled) {
+    const protocol=status.openAIProtocol==='ChatCompletions' ? 'Chat Completions' : 'Responses';
+    state=`The selected route’s backend translation is enabled: POST /v1/messages translates Anthropic Messages to the configured ${protocol} upstream.`;
+  } else {
+    state='The selected route’s backend translation is disabled: POST /v1/messages forwards Anthropic Messages with model rewriting.';
+  }
+  return `${state} Only POST /v1/messages follows the selected backend’s translation switch; other paths are not transformed by this switch. When translation is enabled, /v1/messages/* subroutes are unsupported. This gateway protocol translation setting does not prove upstream model capability: model names and catalog entries do not prove that the model supports the upstream protocol or client features. Verify model support with the provider.`;
 }
 
 export function getDocModels(models, mappings) {
@@ -81,9 +112,13 @@ export async function readProductionDocs(gateway, {fetcher = fetch, signal} = {}
   }
   if (!gateway.apiKey) {
     const response = await get('/v1/models');
-    return {models:validateModels(response.data), mappings:null, source:'Public model catalog', warnings:['No admin configuration is saved for this gateway in this browser. Live routes are unavailable; model options come from /v1/models.']};
+    return {models:validateModels(response.data), mappings:null, backendTranslations:null, source:'Public model catalog', warnings:['No admin configuration is saved for this gateway in this browser. Live routes are unavailable; model options come from /v1/models.']};
   }
-  const [catalog, routes] = await Promise.allSettled([get('/admin/model-discovery',true), get('/admin/mappings',true)]);
+  const [catalog, routes, translations] = await Promise.allSettled([
+    get('/admin/model-discovery',true),
+    get('/admin/mappings',true),
+    get('/admin/backend-translations',true),
+  ]);
   // Never silently turn a failed catalog request into an empty successful document.
   if (catalog.status === 'rejected') throw catalog.reason;
   if (typeof catalog.value.enabled !== 'boolean') throw new Error('Invalid model catalog response.');
@@ -92,7 +127,12 @@ export async function readProductionDocs(gateway, {fetcher = fetch, signal} = {}
   if (routes.status === 'fulfilled' && Array.isArray(routes.value) && routes.value.every(rule => rule && typeof rule.prefix === 'string' && (rule.target == null || typeof rule.target === 'string'))) {
     mappings=routes.value.map(rule=>({prefix:rule.prefix,target:rule.target || '',backend:typeof rule.backend==='string' ? rule.backend : ''}));
   } else warnings.push('The model catalog loaded, but routing rules could not be read. Resolved targets cannot be verified. Refresh to try again.');
+  let backendTranslations=null;
+  if (translations.status === 'fulfilled') {
+    try { backendTranslations=normalizeBackendTranslationResponse(translations.value); }
+    catch { warnings.push('Backend protocol translation settings could not be read; translation status is unknown. Refresh to try again.'); }
+  } else warnings.push('Backend protocol translation settings could not be read; translation status is unknown. Refresh to try again.');
   if (!catalog.value.enabled) warnings.push('Local model discovery is disabled. The catalog shown is returned by the upstream /v1/models endpoint.');
   const models = catalog.value.enabled ? validateModels(catalog.value.models) : validateModels((await get('/v1/models')).data);
-  return {models,mappings,source:catalog.value.enabled ? 'Live admin configuration' : 'Upstream model catalog',warnings};
+  return {models,mappings,backendTranslations,source:catalog.value.enabled ? 'Live admin configuration' : 'Upstream model catalog',warnings};
 }

@@ -39,7 +39,7 @@
         <span class="health-chevron" aria-hidden="true">▾</span>
       </div>
 
-      <button id="refresh-btn" class="btn btn-primary" title="Reload rules and health status">Refresh</button>
+      <button id="refresh-btn" class="btn btn-primary" title="Reload rules, health, backend settings, and model discovery">Refresh</button>
     </div>
   </header>
 
@@ -107,6 +107,36 @@
       <div class="classifier-body" id="classifier-body">
         <div class="classifier-loading">Loading…</div>
       </div>
+    </section>
+
+    <section class="panel backend-translations-panel" aria-labelledby="backend-translations-title">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="backend-translations-title">BACKEND PROTOCOL TRANSLATION</h2>
+          <span class="panel-hint">EFFECTIVE PER-BACKEND SETTINGS</span>
+        </div>
+      </div>
+      <p class="backend-translation-guidance">Changes take effect immediately and persist as runtime overrides. Harden Configuration exports the current effective values for deployment promotion; reset each runtime override after redeploying to use the new base configuration.</p>
+      <div class="backend-translation-status" id="backend-translations-status" role="status" aria-live="polite">Loading effective settings…</div>
+      <div class="form-error backend-translation-error" id="backend-translations-error" role="alert" hidden></div>
+      <div class="table-wrap backend-translations-wrap">
+        <table class="rules-table backend-translation-table" aria-label="Effective backend protocol translation settings">
+          <thead>
+            <tr>
+              <th>BACKEND</th>
+              <th>TRANSLATION ENABLED</th>
+              <th>UPSTREAM PROTOCOL</th>
+              <th>REASONING FORMAT</th>
+              <th>SOURCE</th>
+              <th class="translation-actions-heading">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody id="backend-translations-body"></tbody>
+        </table>
+      </div>
+      <footer class="panel-foot backend-translation-foot">
+        <span>Backend names come from <code>GET /admin/backends</code>; effective values and source come from <code>/admin/backend-translations</code>.</span>
+      </footer>
     </section>
 
     <section class="panel model-discovery-panel" aria-labelledby="model-discovery-panel-title">
@@ -310,16 +340,17 @@
     <div class="modal-backdrop" data-close="harden-modal"></div>
     <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="harden-title">
       <div class="modal-head">
-        <h3 id="harden-title">Harden Configuration · ModelMapping</h3>
+        <h3 id="harden-title">Harden Configuration · Effective Settings</h3>
         <button class="modal-close" data-close="harden-modal" aria-label="Close">×</button>
       </div>
       <div class="harden-body">
-        <p class="harden-hint" id="harden-hint-json">Paste the complete configuration below into <code>appsettings.json</code>. It includes <code>ModelMapping</code>, <code>Classifier</code>, and the selected gateway’s complete effective <code>ModelDiscovery</code> catalog. After restarting the gateway, it becomes the base default. Then use “Reset All Overrides” on the main panel to clear runtime settings.</p>
-        <p class="harden-hint" id="harden-hint-env" hidden>Paste the complete snippet below into the docker-compose service’s <code>environment:</code> section. It includes <code>ModelMapping__Rules__*</code>, <code>Classifier__Target/Backend/ProxyServer</code>, and <code>ModelDiscovery__Enabled</code> / <code>ModelDiscovery__Models__*</code>. Restart the container to apply it.</p>
+        <p class="harden-hint" id="harden-hint-json">Merge the exported translation fields into the corresponding existing <code>Backends</code> entries in <code>appsettings.json</code>; preserve each <code>BaseUrl</code> and all unrelated values. This snippet includes the selected gateway’s effective routing, classifier, model discovery, and backend translation settings. Dashboard edits take effect immediately and persist as runtime overrides. Redeploy the updated base configuration, then reset the backend translation runtime overrides so the new base values take effect.</p>
+        <p class="harden-hint" id="harden-hint-env" hidden>Add the exported <code>Backends__{name}__...</code> variables to the service’s existing <code>environment:</code> section; preserve existing backend settings such as <code>BaseUrl</code> and unrelated values. The snippet also includes routing, classifier, and model discovery settings. Dashboard edits take effect immediately and persist as runtime overrides. Redeploy the service, then reset the backend translation runtime overrides so the new base values take effect.</p>
         <div class="seg" role="tablist" aria-label="Configuration format">
           <button type="button" class="seg-btn active" id="harden-fmt-json" aria-pressed="true">appsettings.json</button>
           <button type="button" class="seg-btn" id="harden-fmt-env" aria-pressed="false">docker-compose env</button>
         </div>
+        <div class="form-error harden-error" id="harden-error" role="alert" hidden></div>
         <textarea id="harden-output" class="harden-output" readonly spellcheck="false" aria-label="Exported configuration snippet"></textarea>
       </div>
       <div class="modal-actions">
