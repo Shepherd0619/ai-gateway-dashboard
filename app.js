@@ -1,7 +1,7 @@
-import * as Routing from './routing.js';
-import * as ModelDiscovery from './model-discovery.js';
-import * as BackendTranslations from './backend-translations.js';
-import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js';
+import * as Routing from './routing.js?v=20261110.1';
+import * as ModelDiscovery from './model-discovery.js?v=20261110.1';
+import * as BackendTranslations from './backend-translations.js?v=20261110.1';
+import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js?v=20261110.1';
 
 /* ═══════════════════════════════════════════════════════════
    AI GATEWAY · RUNTIME MAPPING CONSOLE — app logic

@@ -1,5 +1,5 @@
 // Shared generation and read-only production configuration loading.
-import { normalizeBackendTranslationResponse } from './routing.js';
+import { normalizeBackendTranslationResponse } from './routing.js?v=20261110.1';
 
 export function normalizeGatewayUrl(value) {
   const url = new URL(String(value).trim());
