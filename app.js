@@ -1,5 +1,6 @@
 import * as Routing from './routing.js';
 import * as ModelDiscovery from './model-discovery.js';
+import * as BackendTranslations from './backend-translations.js';
 import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js';
 
 /* ═══════════════════════════════════════════════════════════
@@ -91,6 +92,14 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     return 'Unable to connect to the gateway. Check the base URL, backend availability, and whether CORS allows this page origin.';
   }
 
+  function backendTranslationError(err) {
+    if (err && err.status === 404 && err.backendTranslationEndpoint) {
+      return 'This gateway does not support backend protocol translation settings. Upgrade to a newer gateway version with GET /admin/backend-translations.';
+    }
+    if (err && err.name === 'ApiError') return friendlyError(err);
+    return (err && err.message) || friendlyError(err);
+  }
+
   /* ── API client ───────────────────────────────────────── */
   async function api(method, path, opts) {
     opts = opts || {};
@@ -122,9 +131,12 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     return result;
   }
 
+  const backendTranslationApi = BackendTranslations.createBackendTranslationApi(api);
+
   const Api = {
     listMappings: () => api('GET', '/admin/mappings'),
     listBackends: () => api('GET', '/admin/backends'),
+    ...backendTranslationApi,
     getModelDiscovery: () => api('GET', '/admin/model-discovery'),
     setModelDiscovery: (settings) => api('PUT', '/admin/model-discovery', { body: settings }),
     resetModelDiscovery: () => api('DELETE', '/admin/model-discovery'),
@@ -142,6 +154,14 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     }),
     deleteClassifier: () => api('DELETE', '/admin/classifier'),
   };
+
+  const backendTranslationManager = BackendTranslations.createBackendTranslationManager({
+    api: Api,
+    getGatewayId: () => state.activeGatewayId,
+    normalize: Routing.normalizeBackendTranslationResponse,
+    formatError: friendlyError,
+    onChange: renderBackendTranslations,
+  });
 
   /* ── rendering ────────────────────────────────────────── */
   function renderGatewaySelect() {
@@ -415,15 +435,149 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     resetBtn.hidden = config.source !== 'runtime';
   }
 
+  function renderBackendTranslations(view) {
+    const body = document.getElementById('backend-translations-body');
+    const status = document.getElementById('backend-translations-status');
+    const error = document.getElementById('backend-translations-error');
+    body.replaceChildren();
+
+    error.textContent = view.error || '';
+    error.hidden = !view.error;
+    if (!view.gatewayId) status.textContent = 'Select a gateway to inspect effective backend settings.';
+    else if (view.loading) status.textContent = 'Loading effective backend translation settings…';
+    else if (view.error) status.textContent = 'Effective settings unavailable.';
+    else status.textContent = view.names.length + ' configured backend' + (view.names.length === 1 ? '' : 's') + ' · showing effective values.';
+
+    if (view.names.length === 0) {
+      const row = document.createElement('tr');
+      const cell = el('td', 'backend-translation-unavailable', view.error
+        ? 'Backend settings cannot be shown until both backend names and effective translations load.'
+        : (view.gatewayId ? 'No configured backends.' : 'No gateway selected.'));
+      cell.colSpan = 6;
+      row.appendChild(cell);
+      body.appendChild(row);
+      return;
+    }
+
+    view.names.forEach((name) => {
+      const row = document.createElement('tr');
+      row.setAttribute('data-translation-row', name);
+      row.appendChild(el('td', 'cell-mono', name));
+
+      const settings = Object.prototype.hasOwnProperty.call(view.effective, name) ? view.effective[name] : null;
+      if (!settings) {
+        const unavailable = el('td', 'backend-translation-unavailable', view.loading ? 'Loading…' : 'Effective settings unavailable.');
+        unavailable.colSpan = 5;
+        row.appendChild(unavailable);
+        body.appendChild(row);
+        return;
+      }
+
+      const draft = view.drafts.get(name) || settings;
+      const busy = view.loading || view.saving.has(name);
+      const enabledCell = document.createElement('td');
+      const toggleLabel = el('label', 'translation-control');
+      const enabled = document.createElement('input');
+      enabled.type = 'checkbox';
+      enabled.checked = draft.translateAnthropicToOpenAI;
+      enabled.disabled = busy;
+      enabled.setAttribute('data-translation-field', 'enabled');
+      enabled.setAttribute('aria-label', 'Edit translation enabled for ' + name);
+      toggleLabel.append(enabled, el('span', '', 'Enabled'));
+      enabledCell.appendChild(toggleLabel);
+      enabledCell.appendChild(el('span', 'translation-effective', 'Effective: ' + (settings.translateAnthropicToOpenAI ? 'Enabled' : 'Disabled')));
+      row.appendChild(enabledCell);
+
+      const protocolCell = document.createElement('td');
+      const protocol = document.createElement('select');
+      protocol.disabled = busy;
+      protocol.setAttribute('data-translation-field', 'protocol');
+      protocol.setAttribute('aria-label', 'Edit upstream protocol for ' + name);
+      [['ChatCompletions', 'Chat Completions'], ['Responses', 'Responses']].forEach(([value, label]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        protocol.appendChild(option);
+      });
+      protocol.value = draft.openAIProtocol;
+      protocolCell.appendChild(protocol);
+      protocolCell.appendChild(el('span', 'translation-effective', 'Effective: ' + settings.openAIProtocol));
+      row.appendChild(protocolCell);
+
+      const reasoningCell = document.createElement('td');
+      const reasoning = document.createElement('select');
+      reasoning.disabled = busy;
+      reasoning.setAttribute('data-translation-field', 'reasoning');
+      reasoning.setAttribute('aria-label', 'Edit reasoning format for ' + name);
+      [['OpenAI', 'OpenAI'], ['OpenRouter', 'OpenRouter']].forEach(([value, label]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        reasoning.appendChild(option);
+      });
+      reasoning.value = draft.reasoningFormat;
+      reasoningCell.appendChild(reasoning);
+      reasoningCell.appendChild(el('span', 'translation-effective', 'Effective: ' + settings.reasoningFormat));
+      row.appendChild(reasoningCell);
+
+      const sourceCell = document.createElement('td');
+      sourceCell.appendChild(el('span', 'translation-source ' + settings.source, settings.source.toUpperCase()));
+      row.appendChild(sourceCell);
+
+      const actions = el('td', 'translation-actions');
+      const save = el('button', 'btn btn-primary', 'Save');
+      save.type = 'button';
+      save.disabled = busy;
+      save.setAttribute('data-backend-save', name);
+      const reset = el('button', 'btn btn-ghost', 'Reset');
+      reset.type = 'button';
+      reset.disabled = busy || settings.source !== 'runtime';
+      reset.title = 'Discard this runtime override and reload the base settings';
+      reset.setAttribute('data-backend-reset', name);
+      actions.append(save, reset);
+      row.appendChild(actions);
+      body.appendChild(row);
+    });
+  }
+
+  function readBackendTranslationDraft(row) {
+    return {
+      translateAnthropicToOpenAI: row.querySelector('[data-translation-field="enabled"]').checked,
+      openAIProtocol: row.querySelector('[data-translation-field="protocol"]').value,
+      reasoningFormat: row.querySelector('[data-translation-field="reasoning"]').value,
+    };
+  }
+
   /* ── data loading ─────────────────────────────────────── */
+  function normalizeConfiguredBackendNames(data) {
+    let expectedCount;
+    if (Array.isArray(data)) expectedCount = data.length;
+    else if (data && Array.isArray(data.backends)) expectedCount = data.backends.length;
+    else if (data && Array.isArray(data.Backends)) expectedCount = data.Backends.length;
+    else if (data && data.Backends && typeof data.Backends === 'object') expectedCount = Object.keys(data.Backends).length;
+    else throw new Error('The gateway returned an invalid backend names response.');
+
+    const names = Routing.normalizeBackendNames(data);
+    if (names.length !== expectedCount || names.some((name) => !name.trim())) {
+      throw new Error('The gateway returned an invalid backend name.');
+    }
+    return names;
+  }
+
   async function loadBackends() {
+    const gatewayId = state.activeGatewayId;
     try {
       const { data } = await Api.listBackends();
-      liveBackends = Routing.normalizeBackendNames(data);
+      if (gatewayId !== state.activeGatewayId) return;
+      liveBackends = normalizeConfiguredBackendNames(data);
+      refreshRouteChoices();
+      await backendTranslationManager.load(liveBackends, gatewayId);
     } catch (err) {
+      if (gatewayId !== state.activeGatewayId) return;
       liveBackends = [];
+      refreshRouteChoices();
+      backendTranslationManager.setUnavailable(err, liveBackends, gatewayId);
     }
-    refreshRouteChoices();
   }
 
   async function loadClassifier() {
@@ -671,6 +825,17 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
   }
 
   function loadAll() {
+    if (hardenGatewayId && hardenGatewayId !== state.activeGatewayId) {
+      hardenModelDiscovery = null;
+      hardenBackendTranslations = null;
+      hardenGatewayId = null;
+      const hardenModal = document.getElementById('harden-modal');
+      if (!hardenModal.hidden) {
+        closeModal('harden-modal');
+        toast('Gateway changed. Reopen Harden Configuration to load current settings.', 'warn');
+      }
+    }
+    backendTranslationManager.beginGateway(state.activeGatewayId);
     loadRules();
     loadHealth();
     loadClassifier();
@@ -968,20 +1133,37 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
 
   /* ── harden / export ──────────────────────────────────── */
   let hardenModelDiscovery = null;
+  let hardenBackendTranslations = null;
+  let hardenGatewayId = null;
 
-  function buildHardenSnippet(modelDiscovery) {
-    return JSON.stringify(Routing.buildHardenConfig(currentRules, classifierConfig, modelDiscovery), null, 2);
+  function buildHardenSnippet(modelDiscovery, backendTranslations) {
+    return JSON.stringify(Routing.buildHardenConfig(currentRules, classifierConfig, modelDiscovery, backendTranslations), null, 2);
   }
 
-  function buildHardenEnvSnippet(modelDiscovery) {
-    return ['environment:', ...Routing.buildHardenEnvLines(currentRules, classifierConfig, modelDiscovery)].join('\n');
+  function buildHardenEnvSnippet(modelDiscovery, backendTranslations) {
+    return ['environment:', ...Routing.buildHardenEnvLines(currentRules, classifierConfig, modelDiscovery, backendTranslations)].join('\n');
   }
 
   function renderHarden() {
     const isJson = hardenFormat === 'json';
-    document.getElementById('harden-output').value = isJson
-      ? buildHardenSnippet(hardenModelDiscovery)
-      : buildHardenEnvSnippet(hardenModelDiscovery);
+    const output = document.getElementById('harden-output');
+    const error = document.getElementById('harden-error');
+    const result = BackendTranslations.renderHardenOutput(hardenFormat, () => {
+      if (!hardenBackendTranslations || hardenGatewayId !== state.activeGatewayId) {
+        throw new Error('Effective backend translation settings are unavailable for the selected gateway. Reopen Harden Configuration to reload them.');
+      }
+      return buildHardenSnippet(hardenModelDiscovery, hardenBackendTranslations);
+    }, () => {
+      if (!hardenBackendTranslations || hardenGatewayId !== state.activeGatewayId) {
+        throw new Error('Effective backend translation settings are unavailable for the selected gateway. Reopen Harden Configuration to reload them.');
+      }
+      return buildHardenEnvSnippet(hardenModelDiscovery, hardenBackendTranslations);
+    });
+    output.value = result.value;
+    error.textContent = result.error || '';
+    error.hidden = !result.error;
+    document.getElementById('harden-copy').disabled = !!result.error;
+    document.getElementById('harden-download').disabled = !!result.error;
     document.getElementById('harden-hint-json').hidden = !isJson;
     document.getElementById('harden-hint-env').hidden = isJson;
 
@@ -1005,31 +1187,56 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     // Refresh before generating the snippet so a page refresh or a slow API
     // response cannot produce an export with missing configuration.
     await loadClassifier();
+    if (gatewayId !== state.activeGatewayId) {
+      toast('The selected gateway changed. Reopen Harden Configuration to export its current settings.', 'warn');
+      return;
+    }
     if (!currentRules.length && !classifierConfig) {
       toast('There is no configuration to harden', 'warn');
       return;
     }
 
     try {
-      const { data } = await Api.getModelDiscovery();
+      const [modelResponse, backendResponse, translationsResponse] = await Promise.all([
+        Api.getModelDiscovery(),
+        Api.listBackends(),
+        Api.getBackendTranslations().catch((err) => {
+          if (err && typeof err === 'object') err.backendTranslationEndpoint = true;
+          throw err;
+        }),
+      ]);
       if (gatewayId !== state.activeGatewayId) {
         toast('The selected gateway changed. Reopen Harden Configuration to export its current settings.', 'warn');
         return;
       }
-      if (!ModelDiscovery.canApplyModelDiscoveryResponse(data)) {
-        toast('The gateway returned invalid model discovery settings. Configuration export was canceled.', 'error');
-        return;
+      if (!ModelDiscovery.canApplyModelDiscoveryResponse(modelResponse.data)) {
+        throw new Error('The gateway returned invalid model discovery settings. Configuration export was canceled.');
       }
-      hardenModelDiscovery = data;
+      const backendNames = normalizeConfiguredBackendNames(backendResponse.data);
+      const backendTranslations = Routing.normalizeBackendTranslationResponse(translationsResponse.data);
+      BackendTranslations.validateBackendTranslationNames(backendNames, backendTranslations);
+
+      hardenModelDiscovery = ModelDiscovery.normalizeModelDiscovery(modelResponse.data);
+      hardenBackendTranslations = backendTranslations;
+      hardenGatewayId = gatewayId;
       renderHarden();
       openModal('harden-modal');
     } catch (err) {
-      toast(friendlyError(err), 'error');
+      if (gatewayId !== state.activeGatewayId) {
+        toast('The selected gateway changed. Reopen Harden Configuration to export its current settings.', 'warn');
+        return;
+      }
+      const message = err && err.backendTranslationEndpoint
+        ? backendTranslationError(err)
+        : (err && err.name === 'ApiError' ? friendlyError(err) : ((err && err.message) || friendlyError(err)));
+      toast(message, 'error');
     }
   }
   function downloadHarden() {
     const isJson = hardenFormat === 'json';
-    const text = document.getElementById('harden-output').value;
+    const output = document.getElementById('harden-output');
+    if (document.getElementById('harden-download').disabled || !output.value) return;
+    const text = output.value;
     const blob = new Blob([text], { type: isJson ? 'application/json' : 'text/yaml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1043,6 +1250,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
 
   async function copyHarden() {
     const ta = document.getElementById('harden-output');
+    if (document.getElementById('harden-copy').disabled || !ta.value) return;
     try {
       await navigator.clipboard.writeText(ta.value);
       toast('Copied to clipboard', 'success');
@@ -1273,6 +1481,38 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
         setModelDiscoveryStatus('Catalog not loaded for the newly selected gateway.');
         setModelDiscoveryBusy(true);
       }
+    });
+
+    const translationBody = document.getElementById('backend-translations-body');
+    translationBody.addEventListener('change', (event) => {
+      if (!event.target.matches('[data-translation-field]')) return;
+      const row = event.target.closest('[data-translation-row]');
+      if (row) backendTranslationManager.updateDraft(row.getAttribute('data-translation-row'), readBackendTranslationDraft(row));
+    });
+    translationBody.addEventListener('click', async (event) => {
+      const save = event.target.closest('[data-backend-save]');
+      if (save) {
+        const row = save.closest('[data-translation-row]');
+        const name = save.getAttribute('data-backend-save');
+        if (!row) return;
+        const settings = readBackendTranslationDraft(row);
+        backendTranslationManager.updateDraft(name, settings);
+        if (await backendTranslationManager.save(name, settings)) toast('Backend translation settings saved', 'success');
+        return;
+      }
+
+      const reset = event.target.closest('[data-backend-reset]');
+      if (!reset) return;
+      const name = reset.getAttribute('data-backend-reset');
+      confirmModal({
+        title: 'Reset Backend Translation',
+        body: 'Discard the runtime translation override for “' + name + '” and reload its effective base settings?',
+        okText: 'Reset to Base',
+        danger: false,
+        onConfirm: async () => {
+          if (await backendTranslationManager.reset(name)) toast('Backend translation reset to base settings', 'success');
+        },
+      });
     });
 
     document.getElementById('model-discovery-btn').addEventListener('click', loadModelDiscovery);

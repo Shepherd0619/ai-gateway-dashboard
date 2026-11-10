@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeGatewayUrl, getDocModels, resolveDocRoute, buildSnippets, readProductionDocs } from '../tool-docs.js';
+import * as ToolDocs from '../tool-docs.js';
 
 test('gateway URL rejects unsafe values and normalizes trailing slash', () => {
   assert.equal(normalizeGatewayUrl('https://example.test/gateway/'), 'https://example.test/gateway');
@@ -53,11 +54,15 @@ test('live loader only reads admin endpoints and keeps admin key in request head
   const calls=[];
   const fetcher=async (url, options) => {
     calls.push({url,options});
-    return {ok:true,json:async()=>url.endsWith('/mappings') ? [{prefix:'claude',target:'openai/live'}] : {enabled:true,models:[{id:'claude-live'}]}};
+    const body=url.endsWith('/mappings') ? [{prefix:'claude',target:'openai/live'}]
+      : url.endsWith('/backend-translations') ? {backends:[]}
+      : {enabled:true,models:[{id:'claude-live'}]};
+    return {ok:true,json:async()=>body};
   };
   const result=await readProductionDocs({baseUrl:'https://example.test',apiKey:'admin-test'}, {fetcher});
   assert.equal(result.models[0].id,'claude-live');
-  assert.equal(calls.length,2);
+  assert.deepEqual(result.backendTranslations,{});
+  assert.equal(calls.length,3);
   assert.ok(calls.every(c=>c.options.method==='GET' && c.options.headers['x-admin-key']==='admin-test'));
   assert.doesNotMatch(JSON.stringify(result), /admin-test/);
 });
@@ -70,6 +75,7 @@ test('public reader uses discovery, and malformed or failed catalog cannot look 
   }});
   assert.equal(result.models[0].id,'claude-public');
   assert.equal(result.mappings,null);
+  assert.equal(result.backendTranslations,null);
   await assert.rejects(()=>readProductionDocs({baseUrl:'https://example.test'}, {fetcher:async()=>({ok:true,json:async()=>({})})}), /Invalid model catalog/);
   await assert.rejects(()=>readProductionDocs({baseUrl:'https://example.test'}, {fetcher:async()=>({ok:false,status:401})}), /401/);
 });
@@ -77,6 +83,7 @@ test('public reader uses discovery, and malformed or failed catalog cannot look 
 test('partial route failure is explicit and cannot fabricate a target', async () => {
   const result=await readProductionDocs({baseUrl:'https://example.test',apiKey:'admin-test'}, {fetcher:async url=>{
     if(url.endsWith('/mappings')) return {ok:false,status:503};
+    if(url.endsWith('/backend-translations')) return {ok:true,json:async()=>({backends:[]})};
     return {ok:true,json:async()=>({enabled:true,models:[{id:'claude-live'}]})};
   }});
   assert.equal(result.mappings,null);
@@ -90,9 +97,118 @@ test('disabled discovery reads upstream catalog without forwarding the admin key
       assert.deepEqual(options.headers,{});
       return {ok:true,json:async()=>({data:[{id:'upstream-live'}]})};
     }
-    return {ok:true,json:async()=>url.endsWith('/mappings') ? [] : {enabled:false,models:[{id:'inactive-local'}]}};
+    if(url.endsWith('/mappings')) return {ok:true,json:async()=>[]};
+    if(url.endsWith('/backend-translations')) return {ok:true,json:async()=>({backends:[]})};
+    return {ok:true,json:async()=>({enabled:false,models:[{id:'inactive-local'}]})};
   }});
   assert.equal(result.source,'Upstream model catalog');
   assert.deepEqual(result.models,[{id:'upstream-live'}]);
   assert.ok(result.warnings.length);
+});
+
+const translationSettings=(name,patch={})=>({
+  name,translateAnthropicToOpenAI:true,openAIProtocol:'ChatCompletions',reasoningFormat:'OpenRouter',source:'base',...patch,
+});
+
+test('live admin reader fetches and normalizes backend translation settings', async () => {
+  const requests=[];
+  const result=await readProductionDocs({baseUrl:'https://example.test',apiKey:'admin-test'}, {fetcher:async(url,options)=>{
+    requests.push({url,options});
+    const body=url.endsWith('/model-discovery') ? {enabled:true,models:[{id:'claude-live'}]}
+      : url.endsWith('/mappings') ? [{prefix:'claude',target:'openai/live',backend:'openrouter'}]
+      : {backends:[translationSettings('openrouter',{openAIProtocol:'Responses',reasoningFormat:'OpenAI'})]};
+    return {ok:true,json:async()=>body};
+  }});
+  assert.equal(requests.length,3);
+  const translationRequest=requests.find(request=>request.url.endsWith('/admin/backend-translations'));
+  assert.ok(translationRequest);
+  assert.equal(translationRequest.options.method,'GET');
+  assert.equal(translationRequest.options.headers['x-admin-key'],'admin-test');
+  assert.deepEqual(result.backendTranslations.openrouter,translationSettings('openrouter',{openAIProtocol:'Responses',reasoningFormat:'OpenAI'}));
+  assert.equal(result.warnings.length,0);
+});
+
+test('translation request failure leaves catalog and routes usable but reports unknown state', async () => {
+  const result=await readProductionDocs({baseUrl:'https://example.test',apiKey:'admin-test'}, {fetcher:async url=>{
+    if(url.endsWith('/model-discovery')) return {ok:true,json:async()=>({enabled:true,models:[{id:'claude-live'}]})};
+    if(url.endsWith('/mappings')) return {ok:true,json:async()=>[{prefix:'claude',target:'openai/live',backend:'openrouter'}]};
+    return {ok:false,status:503};
+  }});
+  assert.deepEqual(result.models,[{id:'claude-live'}]);
+  assert.deepEqual(result.mappings,[{prefix:'claude',target:'openai/live',backend:'openrouter'}]);
+  assert.equal(result.backendTranslations,null);
+  assert.equal(result.warnings.length,1);
+  assert.match(result.warnings[0],/translation/i);
+  assert.match(result.warnings[0],/unknown/i);
+});
+
+test('malformed translation response is unknown without discarding valid catalog and routes', async () => {
+  const result=await readProductionDocs({baseUrl:'https://example.test',apiKey:'admin-test'}, {fetcher:async url=>{
+    if(url.endsWith('/model-discovery')) return {ok:true,json:async()=>({enabled:true,models:[{id:'claude-live'}]})};
+    if(url.endsWith('/mappings')) return {ok:true,json:async()=>[{prefix:'claude',target:'openai/live',backend:'openrouter'}]};
+    return {ok:true,json:async()=>({backends:[{name:'openrouter',translateAnthropicToOpenAI:'true'}]})};
+  }});
+  assert.equal(result.models[0].id,'claude-live');
+  assert.equal(result.mappings[0].backend,'openrouter');
+  assert.equal(result.backendTranslations,null);
+  assert.match(result.warnings.join(' '),/translation.*unknown/i);
+});
+
+test('backend translation status follows the selected route and its exact backend name', () => {
+  const translations={
+    openrouter:translationSettings('openrouter'),
+    lmstudio:translationSettings('lmstudio',{translateAnthropicToOpenAI:false,openAIProtocol:'Responses',reasoningFormat:'OpenAI'}),
+  };
+  const resolve=ToolDocs.resolveDocBackendTranslation;
+  assert.deepEqual(resolve?.('claude-default',[],translations),{
+    enabled:true,openAIProtocol:'ChatCompletions',reasoningFormat:'OpenRouter',
+  });
+  const chained=[
+    {prefix:'claude',target:'alias',backend:'lmstudio'},
+    {prefix:'alias',target:'openai/final',backend:'openrouter'},
+    {prefix:'openai/',target:'',backend:'openrouter'},
+  ];
+  assert.deepEqual(resolve?.('claude-sonnet',chained,translations),{
+    enabled:false,openAIProtocol:'Responses',reasoningFormat:'OpenAI',
+  });
+  assert.equal(resolve?.('claude-sonnet',[{prefix:'claude',target:'openrouter/model',backend:'openrouter'}],{
+    openrouter:translations.openrouter,
+  }).enabled,true);
+  assert.equal(resolve?.('openrouter/model',[{prefix:'openrouter/',target:'',backend:'lmstudio'}],{
+    openrouter:translations.openrouter,
+  }),null);
+  assert.equal(resolve?.('claude-sonnet',chained,null),null);
+});
+
+test('backend translation lookup matches route backend names case-insensitively', () => {
+  const settings=translationSettings('openrouter');
+  const result=ToolDocs.resolveDocBackendTranslation(
+    'claude-model',
+    [{prefix:'claude',target:'',backend:'OPENROUTER'}],
+    {openrouter:settings},
+  );
+
+  assert.deepEqual(result,{
+    enabled:true,
+    openAIProtocol:'ChatCompletions',
+    reasoningFormat:'OpenRouter',
+  });
+});
+
+test('protocol guidance distinguishes unknown status from model capability and documents path limits', () => {
+  const guidance=ToolDocs.buildProtocolTranslationGuidance;
+  const unknown=guidance?.(null) || '';
+  assert.match(unknown,/status is unknown; settings are unavailable for the selected backend/i);
+  assert.match(unknown,/do not infer enabled or disabled/i);
+  assert.doesNotMatch(unknown,/could not be read/i);
+  assert.match(unknown,/Only POST \/v1\/messages/i);
+  assert.match(unknown,/other paths are not transformed/i);
+  assert.match(unknown,/model names.*(do not|cannot).*prove/i);
+  assert.match(unknown,/When translation is enabled, \/v1\/messages\/\* subroutes are unsupported/i);
+  const enabled=guidance?.({enabled:true,openAIProtocol:'ChatCompletions',reasoningFormat:'OpenRouter'}) || '';
+  assert.match(enabled,/translates Anthropic Messages to the configured Chat Completions upstream/i);
+  const disabled=guidance?.({enabled:false,openAIProtocol:'Responses',reasoningFormat:'OpenAI'}) || '';
+  assert.match(disabled,/forwards Anthropic Messages with model rewriting/i);
+  assert.match(disabled,/other paths are not transformed/i);
+  assert.doesNotMatch(`${unknown} ${enabled} ${disabled}`,/\/openai\/v1\//i);
 });

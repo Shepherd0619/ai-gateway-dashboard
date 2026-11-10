@@ -1,4 +1,4 @@
-import { normalizeGatewayUrl, getDocModels, resolveDocRoute, buildSnippets, readProductionDocs } from './tool-docs.js';
+import { normalizeGatewayUrl, getDocModels, resolveDocRoute, resolveDocBackendTranslation, buildProtocolTranslationGuidance, buildSnippets, readProductionDocs } from './tool-docs.js';
 
 const $ = id => document.getElementById(id);
 const storageKey = 'aiGatewayAdmin.v1';
@@ -56,6 +56,8 @@ function routeNote(parent,model) {
   if (!model) return;
   const route=resolveDocRoute(model,snapshot.mappings);
   paragraph(parent,route ? `Current route: ${model} → ${route.target} (${route.backend}). The Claude name is a client alias; the route target identifies the actual model.` : 'Routing information is unavailable for this model. The upstream target cannot be verified.','route-note');
+  const translation=resolveDocBackendTranslation(model,snapshot.mappings,snapshot.backendTranslations);
+  paragraph(parent,buildProtocolTranslationGuidance(translation),'notice');
 }
 function heading(parent,title,intro) { parent.append(node('h1',title),node('p',intro,'intro')); }
 function link(parent,label,url) { const anchor=node('a',label); anchor.href=url; parent.append(anchor); }
@@ -102,7 +104,8 @@ function render() {
     paragraph(start,'Set AI_GATEWAY_API_KEY to your upstream key. Do not use the admin key. After launch, use /status to check the provider and model. For desktop apps, ensure the process can read the environment variable and restart after changing configuration.');
     link(start,'OpenAI gateway connection guide','https://learn.chatgpt.com/docs/enterprise/connect-to-a-gateway');
   } else if (page==='api') {
-    heading(content,'API Clients','Choose the Anthropic or OpenAI SDK for your client protocol. The gateway rewrites model names without converting between the two protocols.');
+    heading(content,'API Clients','Choose the Anthropic or OpenAI SDK for your client protocol. Anthropic Messages behavior follows the selected route’s backend translation setting.');
+    routeNote(content,claudeModel);
     const auth=section('1. Set upstream credentials',content);
     paragraph(auth,'Use an upstream API key accepted by the matched backend. Both x-api-key and Authorization: Bearer are supported. Admin endpoints use a separate x-admin-key.');
     code(auth,$('docs-shell').selectedOptions[0].textContent,snippets.codexShell.replace(/\ncodex$/, ''));
