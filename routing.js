@@ -226,16 +226,17 @@ function collectBackendNames(rules, classifier, liveBackends) {
   return names;
 }
 
-function collectProxyNames(rules, classifier) {
+function collectProxyNames(rules, classifier, configuredNames) {
   var names = [];
+  function addName(name) {
+    if (name && names.indexOf(name) === -1) names.push(name);
+  }
   (rules || []).forEach(function (rule) {
-    var proxy = normalizeRule(rule).proxyServer;
-    if (proxy && names.indexOf(proxy) === -1) names.push(proxy);
+    addName(normalizeRule(rule).proxyServer);
   });
   var normalizedClassifier = normalizeClassifier(classifier);
-  if (normalizedClassifier && normalizedClassifier.proxyServer && names.indexOf(normalizedClassifier.proxyServer) === -1) {
-    names.push(normalizedClassifier.proxyServer);
-  }
+  if (normalizedClassifier) addName(normalizedClassifier.proxyServer);
+  (configuredNames || []).forEach(addName);
   return names;
 }
 

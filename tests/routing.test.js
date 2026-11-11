@@ -91,6 +91,14 @@ test('collects backend and proxy choices dynamically', () => {
   ]);
 });
 
+test('includes configured proxies that are not referenced by a route', () => {
+  assert.deepEqual(routing.collectProxyNames(
+    [{ proxyServer: 'us-exit' }],
+    null,
+    ['us-exit', 'us-exit-aliyun'],
+  ), ['us-exit', 'us-exit-aliyun']);
+});
+
 test('exports Compose env without conflating inherited and direct proxy states', () => {
   assert.deepEqual(routing.buildHardenEnvLines([
     { prefix: 'inherit', target: 'model-a', backend: 'openrouter', proxyServer: null },
