@@ -1,7 +1,7 @@
-import * as Routing from './routing.js?v=20261110.1';
-import * as ModelDiscovery from './model-discovery.js?v=20261110.1';
-import * as BackendTranslations from './backend-translations.js?v=20261110.1';
-import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js?v=20261110.1';
+import * as Routing from './routing.js?v=20261111.1';
+import * as ModelDiscovery from './model-discovery.js?v=20261111.1';
+import * as BackendTranslations from './backend-translations.js?v=20261111.1';
+import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js?v=20261111.1';
 
 /* ═══════════════════════════════════════════════════════════
    AI GATEWAY · RUNTIME MAPPING CONSOLE — app logic
@@ -18,6 +18,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
   let currentRules = [];
   let classifierConfig = null;
   let liveBackends = [];
+  let liveProxyServers = [];
   let editingPrefix = null;   // non-null => edit mode (original prefix)
   let editingGwId = null;     // non-null => editing an existing gateway
   let confirmCallback = null;
@@ -354,7 +355,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
 
   function refreshRouteChoices() {
     const backends = Routing.collectBackendNames(currentRules, classifierConfig, liveBackends);
-    const proxies = Routing.collectProxyNames(currentRules, classifierConfig);
+    const proxies = Routing.collectProxyNames(currentRules, classifierConfig, liveProxyServers);
     populateSelect('f-backend', backends, null, 'Backend default (openrouter)', true);
     populateProxySelect('f-proxy', proxies, null);
     populateSelect('f-classifier-backend', backends, null, 'No backend', true);
@@ -580,6 +581,35 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     }
   }
 
+  function normalizeConfiguredProxyNames(data) {
+    if (!Array.isArray(data)) return [];
+    const names = [];
+    data.forEach((proxy) => {
+      if (proxy && typeof proxy.name === 'string' && proxy.name.trim() && !names.includes(proxy.name)) {
+        names.push(proxy.name);
+      }
+    });
+    return names;
+  }
+
+  function updateConfiguredProxyNames(data, gatewayId) {
+    if (gatewayId !== state.activeGatewayId) return;
+    liveProxyServers = normalizeConfiguredProxyNames(data);
+    refreshRouteChoices();
+  }
+
+  async function loadProxyServers() {
+    const gatewayId = state.activeGatewayId;
+    try {
+      const { data } = await Api.proxyHealth();
+      updateConfiguredProxyNames(data, gatewayId);
+    } catch {
+      if (gatewayId !== state.activeGatewayId) return;
+      liveProxyServers = [];
+      refreshRouteChoices();
+    }
+  }
+
   async function loadClassifier() {
     const gw = activeGateway();
     if (!gw) {
@@ -604,7 +634,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     refreshRouteChoices();
     document.getElementById('f-classifier-target').value = config.target || '';
     populateSelect('f-classifier-backend', Routing.collectBackendNames(currentRules, classifierConfig, liveBackends), config.backend || '', 'No backend', true);
-    populateProxySelect('f-classifier-proxy', Routing.collectProxyNames(currentRules, classifierConfig), config.proxyServer);
+    populateProxySelect('f-classifier-proxy', Routing.collectProxyNames(currentRules, classifierConfig, liveProxyServers), config.proxyServer);
     document.getElementById('classifier-form-error').hidden = true;
     openModal('classifier-modal');
     document.getElementById('f-classifier-target').focus();
@@ -753,6 +783,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
   }
 
   async function loadProxyHealth() {
+    const gatewayId = state.activeGatewayId;
     renderHealthRows([], true);
     const proxyBody = document.getElementById('proxy-body');
     proxyBody.replaceChildren();
@@ -790,6 +821,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     const proxies = proxyResult.status === 'fulfilled'
       ? (Array.isArray(proxyResult.value.data) ? proxyResult.value.data : [])
       : [{ name: 'Proxy', status: 'unhealthy', latency_ms: null, error: friendlyError(proxyResult.reason) }];
+    if (proxyResult.status === 'fulfilled') updateConfiguredProxyNames(proxies, gatewayId);
     renderProxyHealth(proxies);
 
     if (proxyResult.status === 'fulfilled' && proxies.length === 0) {
@@ -840,6 +872,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     loadHealth();
     loadClassifier();
     loadBackends();
+    loadProxyServers();
     loadModelDiscoverySummary();
   }
 
@@ -898,7 +931,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     refreshRouteChoices();
     document.getElementById('f-target').value = mode === 'edit' ? (rule.target == null ? '' : rule.target) : '';
     populateSelect('f-backend', Routing.collectBackendNames(currentRules, classifierConfig, liveBackends), mode === 'edit' ? (rule.backend || 'openrouter') : 'openrouter', 'Backend default (openrouter)', true);
-    populateProxySelect('f-proxy', Routing.collectProxyNames(currentRules, classifierConfig), mode === 'edit' ? rule.proxyServer : null);
+    populateProxySelect('f-proxy', Routing.collectProxyNames(currentRules, classifierConfig, liveProxyServers), mode === 'edit' ? rule.proxyServer : null);
     document.getElementById('f-index').value = '';
 
     const idxHint = document.getElementById('f-index-hint');
