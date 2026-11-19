@@ -1,6 +1,7 @@
 import * as Routing from './routing.js?v=20261124.1';
 import * as ModelDiscovery from './model-discovery.js?v=20261124.1';
 import * as BackendTranslations from './backend-translations.js?v=20261124.1';
+import * as CredentialManagement from './credential-management.js?v=20261124.1';
 import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js?v=20261124.1';
 
 /* ═══════════════════════════════════════════════════════════
@@ -23,6 +24,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
   let editingGwId = null;     // non-null => editing an existing gateway
   let confirmCallback = null;
   let hardenFormat = 'json';  // 'json' | 'env'
+  let credentialTab = 'keys';
   let modelDiscoveryDraft = null;
   let modelDiscoveryGatewayId = null;
   let modelDiscoveryBusy = false;
@@ -156,6 +158,13 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     deleteClassifier: () => api('DELETE', '/admin/classifier'),
   };
 
+  const credentialApi = CredentialManagement.createCredentialApi(api);
+  const credentialManager = CredentialManagement.createCredentialManager({
+    api: credentialApi,
+    getGatewayId: () => state.activeGatewayId,
+    onChange: renderCredentials,
+  });
+
   const backendTranslationManager = BackendTranslations.createBackendTranslationManager({
     api: Api,
     getGatewayId: () => state.activeGatewayId,
@@ -208,6 +217,178 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
       item.append(main, actions);
       list.appendChild(item);
     });
+  }
+
+  function formatCredentialDate(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+  }
+
+  function setCredentialStatus(id, message, isError) {
+    const node = document.getElementById(id);
+    node.textContent = message;
+    node.className = 'credentials-status' + (isError ? ' error' : '');
+  }
+
+  function renderGatewayKeyRows(view, hasGateway) {
+    const body = document.getElementById('gateway-keys-body');
+    body.replaceChildren();
+    if (!hasGateway) {
+      const row = el('tr');
+      const cell = el('td', 'empty-sub', 'Select a gateway to load its keys.');
+      cell.colSpan = 6;
+      row.appendChild(cell);
+      body.appendChild(row);
+    } else if (view.keysLoading && view.keys.length === 0) {
+      const row = el('tr');
+      const cell = el('td', 'empty-sub', 'Loading gateway keys…');
+      cell.colSpan = 6;
+      row.appendChild(cell);
+      body.appendChild(row);
+    } else if (!view.keys.length) {
+      const row = el('tr');
+      const cell = el('td', 'empty-sub', view.keysError ? 'No key records are available.' : 'No gateway keys yet. Issue the first key above.');
+      cell.colSpan = 6;
+      row.appendChild(cell);
+      body.appendChild(row);
+    }
+
+    view.keys.forEach((key) => {
+      const status = CredentialManagement.getGatewayKeyStatus(key);
+      const row = document.createElement('tr');
+      row.appendChild(el('td', 'cell-prefix', key.name));
+      row.appendChild(el('td', null, formatCredentialDate(key.createdAt)));
+      row.appendChild(el('td', null, key.expiresAt ? formatCredentialDate(key.expiresAt) : 'Never'));
+
+      const lastUsed = el('td', 'credential-last-used');
+      if (key.lastUsedAt) {
+        lastUsed.appendChild(document.createTextNode(formatCredentialDate(key.lastUsedAt)));
+        if (key.lastUsedIp) lastUsed.appendChild(el('small', null, key.lastUsedIp));
+      } else {
+        lastUsed.textContent = 'Never used';
+      }
+      row.appendChild(lastUsed);
+
+      const statusCell = el('td');
+      statusCell.appendChild(el('span', 'credential-key-state ' + status, status[0].toUpperCase() + status.slice(1)));
+      row.appendChild(statusCell);
+
+      const actions = el('td', 'col-actions');
+      if (status !== 'revoked') {
+        const revoke = el('button', 'btn btn-danger-ghost', view.keyBusy === key.id ? 'Revoking…' : 'Revoke');
+        revoke.type = 'button';
+        revoke.setAttribute('data-credential-revoke', key.id);
+        revoke.disabled = !hasGateway || !!view.keyBusy || view.keysLoading;
+        actions.appendChild(revoke);
+      } else {
+        actions.textContent = '—';
+      }
+      row.appendChild(actions);
+      body.appendChild(row);
+    });
+
+    const start = view.keys.length ? view.offset + 1 : 0;
+    const end = view.offset + view.keys.length;
+    document.getElementById('gateway-keys-page').textContent = view.keys.length ? 'Showing ' + start + '–' + end : 'No keys loaded';
+    document.getElementById('gateway-keys-prev').disabled = !hasGateway || view.offset === 0 || view.keysLoading;
+    document.getElementById('gateway-keys-next').disabled = !hasGateway || view.keysLoading || view.keys.length < view.limit;
+  }
+
+  function renderProviderRows(view, hasGateway) {
+    const body = document.getElementById('provider-credentials-body');
+    body.replaceChildren();
+    if (!hasGateway) {
+      const row = el('tr');
+      const cell = el('td', 'empty-sub', 'Select a gateway to load provider credentials.');
+      cell.colSpan = 4;
+      row.appendChild(cell);
+      body.appendChild(row);
+    } else if (view.providersLoading && view.backends.length === 0) {
+      const row = el('tr');
+      const cell = el('td', 'empty-sub', 'Loading provider credentials…');
+      cell.colSpan = 4;
+      row.appendChild(cell);
+      body.appendChild(row);
+    } else if (!view.backends.length) {
+      const row = el('tr');
+      const cell = el('td', 'empty-sub', view.providersError ? 'Backend credential status is unavailable.' : 'No configured backends.');
+      cell.colSpan = 4;
+      row.appendChild(cell);
+      body.appendChild(row);
+    }
+
+    view.backends.forEach((backend) => {
+      const row = document.createElement('tr');
+      row.setAttribute('data-provider-row', backend.name);
+      row.appendChild(el('td', 'cell-prefix', backend.name));
+      const status = el('td');
+      const sourceText = backend.source === 'runtime' ? 'Runtime override' : backend.source === 'configuration' ? 'Configured' : 'Not configured';
+      status.appendChild(el('span', 'credential-status-badge ' + backend.source, sourceText));
+      row.appendChild(status);
+
+      const inputCell = el('td');
+      const input = document.createElement('input');
+      input.type = 'password';
+      input.autocomplete = 'new-password';
+      input.className = 'credential-provider-input';
+      input.placeholder = 'Enter a new provider key';
+      input.setAttribute('aria-label', 'New provider key for ' + backend.name);
+      input.setAttribute('data-provider-key', backend.name);
+      input.value = '';
+      inputCell.appendChild(input);
+      row.appendChild(inputCell);
+
+      const actions = el('td', 'col-actions');
+      const save = el('button', 'btn btn-ghost', view.providerBusy === backend.name ? 'Saving…' : 'Save runtime key');
+      save.type = 'button';
+      save.setAttribute('data-provider-save', backend.name);
+      save.disabled = !hasGateway || !!view.providerBusy || view.providersLoading;
+      actions.appendChild(save);
+      if (backend.source === 'runtime') {
+        const reset = el('button', 'btn btn-ghost', view.providerBusy === backend.name ? 'Restoring…' : 'Restore configured');
+        reset.type = 'button';
+        reset.setAttribute('data-provider-reset', backend.name);
+        reset.disabled = !hasGateway || !!view.providerBusy || view.providersLoading;
+        actions.appendChild(reset);
+      }
+      row.appendChild(actions);
+      body.appendChild(row);
+    });
+  }
+
+  function renderCredentials(view) {
+    if (!document.getElementById('credentials-modal')) return;
+    view = view || credentialManager.getState();
+    const hasGateway = !!activeGateway();
+
+    const keyMessage = !hasGateway ? 'Select or add a gateway in Manage before using Gateway Keys.'
+      : view.keysLoading ? 'Loading Gateway Key records…'
+        : view.keysError ? view.keysError + (view.keys.length ? ' The table shows the last successful response.' : '')
+          : 'Key management API is responding. Persistent key storage is managed by the gateway.';
+    setCredentialStatus('gateway-key-status', keyMessage, !!view.keysError);
+
+    const providerMessage = !hasGateway ? 'Select or add a gateway in Manage before managing provider credentials.'
+      : view.providersLoading ? 'Loading backend credential status…'
+        : view.providersError ? view.providersError + (view.backends.length ? ' The table shows the last successful response.' : '')
+          : view.backends.length ? 'Backend credential status loaded. The API does not return stored key values.'
+            : 'No backend credential status loaded yet.';
+    setCredentialStatus('provider-credentials-status', providerMessage, !!view.providersError);
+
+    const issueForm = document.getElementById('gateway-key-form');
+    Array.from(issueForm.elements).forEach((control) => {
+      if (control.id !== 'gateway-key-form-error') control.disabled = !hasGateway || view.keyBusy === 'issue';
+    });
+    document.getElementById('gateway-keys-refresh').disabled = !hasGateway || view.keysLoading;
+    document.getElementById('provider-credentials-refresh').disabled = !hasGateway || view.providersLoading;
+
+    const result = document.getElementById('issued-key-result');
+    const keyValue = document.getElementById('issued-key-value');
+    result.hidden = !view.issuedApiKey;
+    keyValue.textContent = view.issuedApiKey || '';
+
+    renderGatewayKeyRows(view, hasGateway);
+    renderProviderRows(view, hasGateway);
   }
 
   function renderRules(rules, emptyMessage) {
@@ -907,7 +1088,84 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
 
   /* ── modals ───────────────────────────────────────────── */
   function openModal(id) { document.getElementById(id).hidden = false; }
-  function closeModal(id) { document.getElementById(id).hidden = true; }
+  function closeModal(id) {
+    if (id === 'credentials-modal') {
+      credentialManager.clearIssuedKey();
+      document.getElementById('gateway-key-form').reset();
+      document.getElementById('gateway-key-form-error').hidden = true;
+    }
+    document.getElementById(id).hidden = true;
+  }
+
+  function setCredentialTab(tab, load = true) {
+    credentialTab = tab === 'providers' ? 'providers' : 'keys';
+    const keysActive = credentialTab === 'keys';
+    const keysTab = document.getElementById('credentials-tab-keys');
+    const providersTab = document.getElementById('credentials-tab-providers');
+    keysTab.classList.toggle('active', keysActive);
+    providersTab.classList.toggle('active', !keysActive);
+    keysTab.setAttribute('aria-selected', String(keysActive));
+    providersTab.setAttribute('aria-selected', String(!keysActive));
+    keysTab.tabIndex = keysActive ? 0 : -1;
+    providersTab.tabIndex = keysActive ? -1 : 0;
+    document.getElementById('gateway-keys-pane').hidden = !keysActive;
+    document.getElementById('provider-credentials-pane').hidden = keysActive;
+    if (!load || document.getElementById('credentials-modal').hidden) return;
+    if (keysActive) credentialManager.loadKeys(credentialManager.getState().offset);
+    else credentialManager.loadProviders();
+  }
+
+  function openCredentials() {
+    credentialManager.clearIssuedKey();
+    document.getElementById('gateway-key-form').reset();
+    document.getElementById('gateway-key-form-error').hidden = true;
+    setCredentialTab('keys', false);
+    renderCredentials();
+    openModal('credentials-modal');
+    credentialManager.loadKeys(0);
+  }
+
+  async function handleGatewayKeyIssue(event) {
+    event.preventDefault();
+    const name = document.getElementById('gateway-key-name').value.trim();
+    const expiryInput = document.getElementById('gateway-key-expires-at').value;
+    const error = document.getElementById('gateway-key-form-error');
+    error.hidden = true;
+    if (!name) {
+      showFormError(error, 'Enter a name for this Gateway Key.');
+      return;
+    }
+
+    let expiresAt = null;
+    if (expiryInput) {
+      const expiry = new Date(expiryInput);
+      if (Number.isNaN(expiry.getTime()) || expiry.getTime() <= Date.now()) {
+        showFormError(error, 'Choose an expiry time in the future.');
+        return;
+      }
+      expiresAt = expiry.toISOString();
+    }
+
+    if (await credentialManager.issueGatewayKey(name, expiresAt)) {
+      document.getElementById('gateway-key-form').reset();
+      toast('Gateway Key issued. Copy and save it now.', 'success');
+    } else {
+      const message = credentialManager.getState().keysError;
+      if (message) showFormError(error, message);
+    }
+  }
+
+  async function copyIssuedGatewayKey() {
+    const issuedApiKey = credentialManager.getState().issuedApiKey;
+    if (!issuedApiKey) return;
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('Clipboard access is unavailable.');
+      await navigator.clipboard.writeText(issuedApiKey);
+      toast('Gateway Key copied', 'success');
+    } catch (error) {
+      toast(error.message || 'Unable to copy the Gateway Key.', 'error');
+    }
+  }
 
   function showFormError(elNode, msg) { elNode.textContent = msg; elNode.hidden = false; }
 
@@ -1139,6 +1397,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     resetGwForm();
     renderGatewaySelect();
     renderGwList();
+    credentialManager.gatewayChanged();
     loadAll();
     toast('Gateway saved', 'success');
   }
@@ -1158,6 +1417,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
         persist(state);
         renderGatewaySelect();
         renderGwList();
+        credentialManager.gatewayChanged();
         loadAll();
         toast('Gateway deleted', 'info');
       },
@@ -1506,8 +1766,10 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     document.getElementById('gateway-select').addEventListener('change', (e) => {
       state.activeGatewayId = e.target.value || null;
       persist(state);
+      credentialManager.gatewayChanged();
       renderGwList();
       loadAll();
+      if (!document.getElementById('credentials-modal').hidden) setCredentialTab(credentialTab);
       if (!document.getElementById('model-discovery-modal').hidden) {
         modelDiscoveryDraft = null;
         showModelDiscoveryError('The selected gateway changed. Close and reopen this dialog to load its catalog.');
@@ -1582,6 +1844,75 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
       renderGwList();
       openModal('gateway-modal');
     });
+    document.getElementById('credentials-btn').addEventListener('click', openCredentials);
+    document.getElementById('credentials-tab-keys').addEventListener('click', () => setCredentialTab('keys'));
+    document.getElementById('credentials-tab-providers').addEventListener('click', () => setCredentialTab('providers'));
+    document.getElementById('credentials-tabs').addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const next = credentialTab === 'keys' ? 'providers' : 'keys';
+      document.getElementById(next === 'keys' ? 'credentials-tab-keys' : 'credentials-tab-providers').focus();
+      setCredentialTab(next);
+    });
+    document.getElementById('gateway-key-form').addEventListener('submit', handleGatewayKeyIssue);
+    document.getElementById('gateway-key-form').addEventListener('input', () => {
+      document.getElementById('gateway-key-form-error').hidden = true;
+    });
+    document.getElementById('gateway-keys-refresh').addEventListener('click', () => credentialManager.loadKeys(credentialManager.getState().offset));
+    document.getElementById('gateway-keys-prev').addEventListener('click', () => {
+      const current = credentialManager.getState();
+      credentialManager.loadKeys(Math.max(0, current.offset - current.limit));
+    });
+    document.getElementById('gateway-keys-next').addEventListener('click', () => {
+      const current = credentialManager.getState();
+      credentialManager.loadKeys(current.offset + current.limit);
+    });
+    document.getElementById('gateway-keys-body').addEventListener('click', (event) => {
+      const revoke = event.target.closest('[data-credential-revoke]');
+      if (!revoke) return;
+      const id = revoke.getAttribute('data-credential-revoke');
+      const key = credentialManager.getState().keys.find((item) => item.id === id);
+      confirmModal({
+        title: 'Revoke Gateway Key',
+        body: 'Revoke “' + (key ? key.name : 'this key') + '”? New requests using this key will be rejected.',
+        okText: 'Revoke key',
+        onConfirm: async () => {
+          if (await credentialManager.revokeGatewayKey(id)) toast('Gateway Key revoked', 'success');
+        },
+      });
+    });
+    document.getElementById('issued-key-copy').addEventListener('click', copyIssuedGatewayKey);
+    document.getElementById('provider-credentials-refresh').addEventListener('click', () => credentialManager.loadProviders());
+    document.getElementById('provider-credentials-body').addEventListener('input', (event) => {
+      const input = event.target.closest('[data-provider-key]');
+      if (!input) return;
+      const row = input.closest('[data-provider-row]');
+      const save = row && row.querySelector('[data-provider-save]');
+      if (save) save.disabled = !input.value.trim() || !!credentialManager.getState().providerBusy;
+    });
+    document.getElementById('provider-credentials-body').addEventListener('click', async (event) => {
+      const save = event.target.closest('[data-provider-save]');
+      if (save) {
+        const row = save.closest('[data-provider-row]');
+        const input = row && row.querySelector('[data-provider-key]');
+        const name = save.getAttribute('data-provider-save');
+        if (!input || !input.value.trim()) return;
+        if (await credentialManager.saveProviderCredential(name, input.value.trim())) toast('Provider key updated for this gateway session', 'success');
+        return;
+      }
+      const reset = event.target.closest('[data-provider-reset]');
+      if (!reset) return;
+      const name = reset.getAttribute('data-provider-reset');
+      confirmModal({
+        title: 'Restore Configured Provider Key',
+        body: 'Clear the runtime override for “' + name + '” and use the configured provider key again?',
+        okText: 'Restore configured',
+        danger: false,
+        onConfirm: async () => {
+          if (await credentialManager.resetProviderCredential(name)) toast('Configured provider key restored', 'success');
+        },
+      });
+    });
     document.getElementById('gw-save').addEventListener('click', handleGwSave);
     document.getElementById('gw-cancel-edit').addEventListener('click', resetGwForm);
 
@@ -1648,7 +1979,9 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
         persist(state);
         renderGatewaySelect();
         renderGwList();
+        credentialManager.gatewayChanged();
         loadAll();
+        if (!document.getElementById('credentials-modal').hidden) setCredentialTab(credentialTab);
         if (!document.getElementById('model-discovery-modal').hidden) {
           modelDiscoveryDraft = null;
           modelDiscoveryGatewayId = state.activeGatewayId;
@@ -1668,7 +2001,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        ['rule-modal', 'gateway-modal', 'confirm-modal', 'proxy-modal', 'model-discovery-modal'].forEach(closeModal);
+        ['rule-modal', 'gateway-modal', 'confirm-modal', 'proxy-modal', 'model-discovery-modal', 'credentials-modal'].forEach(closeModal);
       }
     });
 

@@ -39,6 +39,7 @@
         <span class="health-chevron" aria-hidden="true">▾</span>
       </div>
 
+      <button id="credentials-btn" class="btn btn-ghost" title="Manage provider credentials and Gateway Keys" aria-haspopup="dialog">Credentials</button>
       <button id="refresh-btn" class="btn btn-primary" title="Reload rules, health, backend settings, and model discovery">Refresh</button>
     </div>
   </header>
@@ -281,6 +282,91 @@
         </div>
       </form>
     </div>
+  </div>
+
+  <!-- ══════════════ CREDENTIALS MODAL ══════════════ -->
+  <div class="modal" id="credentials-modal" hidden>
+    <div class="modal-backdrop" data-close="credentials-modal"></div>
+    <section class="modal-card modal-wide credentials-card" role="dialog" aria-modal="true" aria-labelledby="credentials-title">
+      <header class="modal-head credentials-head">
+        <div>
+          <h3 id="credentials-title">Credentials</h3>
+          <p>Manage upstream provider keys and downstream gateway access.</p>
+        </div>
+        <button class="modal-close" data-close="credentials-modal" aria-label="Close credentials">×</button>
+      </header>
+
+      <div class="credentials-tabs" id="credentials-tabs" role="tablist" aria-label="Credential types">
+        <button type="button" class="credential-tab active" id="credentials-tab-keys" role="tab" aria-selected="true" aria-controls="gateway-keys-pane">Gateway keys</button>
+        <button type="button" class="credential-tab" id="credentials-tab-providers" role="tab" aria-selected="false" aria-controls="provider-credentials-pane" tabindex="-1">Provider credentials</button>
+      </div>
+
+      <section class="credentials-pane" id="gateway-keys-pane" role="tabpanel" aria-labelledby="credentials-tab-keys">
+        <p class="credentials-guidance">Gateway keys are stored by the gateway. SQLite file location and permissions are managed in gateway configuration.</p>
+        <div class="credentials-status" id="gateway-key-status" role="status" aria-live="polite">Select a gateway to inspect key storage.</div>
+
+        <form class="credential-issue-form" id="gateway-key-form" novalidate>
+          <div class="credential-issue-copy">
+            <h4>Issue a key</h4>
+            <p>Choose a recognizable name. The full key appears only once after it is created.</p>
+          </div>
+          <div class="form-field">
+            <label class="field-label" for="gateway-key-name">KEY NAME</label>
+            <input id="gateway-key-name" name="name" type="text" maxlength="200" autocomplete="off" placeholder="e.g. laptop-dev" required />
+          </div>
+          <div class="form-field">
+            <label class="field-label" for="gateway-key-expires-at">EXPIRES (OPTIONAL)</label>
+            <input id="gateway-key-expires-at" name="expiresAt" type="datetime-local" />
+          </div>
+          <button type="submit" class="btn btn-primary" id="gateway-key-issue">Issue key</button>
+          <div class="form-error credential-form-error" id="gateway-key-form-error" role="alert" hidden></div>
+        </form>
+
+        <div class="one-time-key" id="issued-key-result" role="status" aria-live="polite" hidden>
+          <div>
+            <strong>Save this key now. It cannot be shown again.</strong>
+            <p>Closing this dialog or switching gateways clears the displayed key.</p>
+          </div>
+          <code id="issued-key-value"></code>
+          <button type="button" class="btn btn-ghost" id="issued-key-copy">Copy key</button>
+        </div>
+
+        <div class="credentials-section-head">
+          <div><h4>Gateway keys</h4><p>Name, expiry, and most recent successful use are shown. Listed records never include key text.</p></div>
+          <button type="button" class="btn btn-ghost" id="gateway-keys-refresh">Refresh</button>
+        </div>
+        <div class="credentials-table-wrap">
+          <table class="rules-table credential-table" aria-label="Gateway keys">
+            <thead><tr><th>NAME</th><th>CREATED</th><th>EXPIRES</th><th>LAST USED</th><th>STATUS</th><th class="col-actions">ACTIONS</th></tr></thead>
+            <tbody id="gateway-keys-body"></tbody>
+          </table>
+        </div>
+        <div class="credential-pager">
+          <span id="gateway-keys-page">No keys loaded</span>
+          <div><button type="button" class="btn btn-ghost" id="gateway-keys-prev" disabled>Previous</button><button type="button" class="btn btn-ghost" id="gateway-keys-next" disabled>Next</button></div>
+        </div>
+      </section>
+
+      <section class="credentials-pane" id="provider-credentials-pane" role="tabpanel" aria-labelledby="credentials-tab-providers" hidden>
+        <p class="credentials-guidance">Provider keys are runtime overrides. Existing values are never returned; enter a new value to replace one. Overrides clear when the gateway restarts.</p>
+        <div class="credentials-status" id="provider-credentials-status" role="status" aria-live="polite">Select a gateway to inspect provider credentials.</div>
+        <div class="credentials-section-head">
+          <div><h4>Backend credentials</h4><p>Values are sent only to the selected gateway and are not saved in this browser.</p></div>
+          <button type="button" class="btn btn-ghost" id="provider-credentials-refresh">Refresh</button>
+        </div>
+        <div class="credentials-table-wrap">
+          <table class="rules-table credential-table" aria-label="Provider credentials">
+            <thead><tr><th>BACKEND</th><th>STATUS</th><th>NEW PROVIDER KEY</th><th class="col-actions">ACTIONS</th></tr></thead>
+            <tbody id="provider-credentials-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="credentials-footer">
+        <span>All operations use the selected gateway and its Admin API key.</span>
+        <button type="button" class="btn btn-ghost" data-close="credentials-modal">Close</button>
+      </footer>
+    </section>
   </div>
 
   <!-- ══════════════ GATEWAY MODAL ══════════════ -->
