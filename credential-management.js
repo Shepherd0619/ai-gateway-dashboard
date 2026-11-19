@@ -93,8 +93,10 @@ export function createCredentialManager(options) {
   const api = options.api;
   const getGatewayId = options.getGatewayId;
   const onChange = options.onChange || (() => {});
-  let providerGeneration = 0;
-  let keyGeneration = 0;
+  let providerLoadGeneration = 0;
+  let providerMutationGeneration = 0;
+  let keyLoadGeneration = 0;
+  let keyMutationGeneration = 0;
   let state = createState(getGatewayId());
 
   function createState(gatewayId) {
@@ -133,8 +135,12 @@ export function createCredentialManager(options) {
   }
 
   function isCurrent(gatewayId, generation, kind) {
+    const currentGeneration = kind === 'provider-load' ? providerLoadGeneration
+      : kind === 'provider-mutation' ? providerMutationGeneration
+        : kind === 'key-load' ? keyLoadGeneration
+          : keyMutationGeneration;
     return gatewayId === state.gatewayId && gatewayId === (getGatewayId() || null) &&
-      generation === (kind === 'provider' ? providerGeneration : keyGeneration);
+      generation === currentGeneration;
   }
 
   function getState() {
@@ -142,8 +148,10 @@ export function createCredentialManager(options) {
   }
 
   function gatewayChanged() {
-    providerGeneration += 1;
-    keyGeneration += 1;
+    providerLoadGeneration += 1;
+    providerMutationGeneration += 1;
+    keyLoadGeneration += 1;
+    keyMutationGeneration += 1;
     state = createState(getGatewayId());
     publish('gateway');
   }
@@ -151,20 +159,20 @@ export function createCredentialManager(options) {
   async function loadProviders() {
     const gatewayId = syncGateway();
     if (!gatewayId) return false;
-    const generation = ++providerGeneration;
+    const generation = ++providerLoadGeneration;
     state.providersLoading = true;
     state.providersError = null;
     publish('providers-loading');
     try {
       const response = await api.getBackendCredentials();
-      if (!isCurrent(gatewayId, generation, 'provider')) return false;
+      if (!isCurrent(gatewayId, generation, 'provider-load')) return false;
       state.backends = normalizeBackendCredentialsResponse(response && response.data).backends;
       state.providersLoading = false;
       state.providersError = null;
       publish('providers-loaded');
       return true;
     } catch (error) {
-      if (!isCurrent(gatewayId, generation, 'provider')) return false;
+      if (!isCurrent(gatewayId, generation, 'provider-load')) return false;
       state.providersLoading = false;
       state.providersError = (error && error.message) || 'Unable to load provider credentials.';
       publish('providers-error');
@@ -180,14 +188,14 @@ export function createCredentialManager(options) {
       publish('keys-error');
       return false;
     }
-    const generation = ++keyGeneration;
+    const generation = ++keyLoadGeneration;
     state.keysLoading = true;
     state.keysError = null;
     state.offset = offset;
     publish('keys-loading');
     try {
       const response = await api.listGatewayKeys(state.limit, offset);
-      if (!isCurrent(gatewayId, generation, 'key')) return false;
+      if (!isCurrent(gatewayId, generation, 'key-load')) return false;
       const page = normalizeGatewayKeysResponse(response && response.data);
       state.keys = page.keys;
       state.limit = page.limit;
@@ -197,7 +205,7 @@ export function createCredentialManager(options) {
       publish('keys-loaded');
       return true;
     } catch (error) {
-      if (!isCurrent(gatewayId, generation, 'key')) return false;
+      if (!isCurrent(gatewayId, generation, 'key-load')) return false;
       state.keysLoading = false;
       state.keysError = formatGatewayKeyError(error);
       publish('keys-error');
@@ -208,19 +216,20 @@ export function createCredentialManager(options) {
   async function updateProvider(name, operation) {
     const gatewayId = syncGateway();
     if (!gatewayId) return false;
-    const generation = ++providerGeneration;
+    ++providerLoadGeneration;
+    const generation = ++providerMutationGeneration;
     state.providerBusy = name;
     state.providersError = null;
     publish('provider-saving');
     try {
       await operation();
-      if (!isCurrent(gatewayId, generation, 'provider')) return false;
+      if (!isCurrent(gatewayId, generation, 'provider-mutation')) return false;
       state.providerBusy = null;
       publish('provider-saved');
       await loadProviders();
       return true;
     } catch (error) {
-      if (!isCurrent(gatewayId, generation, 'provider')) return false;
+      if (!isCurrent(gatewayId, generation, 'provider-mutation')) return false;
       state.providerBusy = null;
       state.providersError = (error && error.message) || 'Unable to update provider credentials.';
       publish('provider-error');
@@ -239,13 +248,14 @@ export function createCredentialManager(options) {
   async function issueGatewayKey(name, expiresAt = null) {
     const gatewayId = syncGateway();
     if (!gatewayId) return false;
-    const generation = ++keyGeneration;
+    ++keyLoadGeneration;
+    const generation = ++keyMutationGeneration;
     state.keyBusy = 'issue';
     state.keysError = null;
     publish('key-issuing');
     try {
       const response = await api.issueGatewayKey(name, expiresAt);
-      if (!isCurrent(gatewayId, generation, 'key')) return false;
+      if (!isCurrent(gatewayId, generation, 'key-mutation')) return false;
       const apiKey = response && response.data && response.data.apiKey;
       if (typeof apiKey !== 'string' || !apiKey) throw new Error('The gateway did not return the newly issued key.');
       state.issuedApiKey = apiKey;
@@ -254,7 +264,7 @@ export function createCredentialManager(options) {
       await loadKeys(state.offset);
       return true;
     } catch (error) {
-      if (!isCurrent(gatewayId, generation, 'key')) return false;
+      if (!isCurrent(gatewayId, generation, 'key-mutation')) return false;
       state.keyBusy = null;
       state.keysError = formatGatewayKeyError(error);
       publish('key-issue-error');
@@ -265,19 +275,20 @@ export function createCredentialManager(options) {
   async function revokeGatewayKey(id) {
     const gatewayId = syncGateway();
     if (!gatewayId) return false;
-    const generation = ++keyGeneration;
+    ++keyLoadGeneration;
+    const generation = ++keyMutationGeneration;
     state.keyBusy = id;
     state.keysError = null;
     publish('key-revoking');
     try {
       await api.revokeGatewayKey(id);
-      if (!isCurrent(gatewayId, generation, 'key')) return false;
+      if (!isCurrent(gatewayId, generation, 'key-mutation')) return false;
       state.keyBusy = null;
       publish('key-revoked');
       await loadKeys(state.offset);
       return true;
     } catch (error) {
-      if (!isCurrent(gatewayId, generation, 'key')) return false;
+      if (!isCurrent(gatewayId, generation, 'key-mutation')) return false;
       state.keyBusy = null;
       state.keysError = formatGatewayKeyError(error);
       publish('key-revoke-error');
@@ -286,7 +297,11 @@ export function createCredentialManager(options) {
   }
 
   function clearIssuedKey() {
-    if (!state.issuedApiKey) return;
+    const hadIssuedKey = !!state.issuedApiKey;
+    const hadBusyOperation = !!state.keyBusy;
+    if (!hadIssuedKey && !hadBusyOperation) return;
+    keyMutationGeneration += 1;
+    state.keyBusy = null;
     state.issuedApiKey = null;
     publish('issued-key-cleared');
   }

@@ -9,6 +9,12 @@ import {
   normalizeGatewayKeysResponse,
 } from '../credential-management.js';
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 test('credential API uses the Admin endpoints and sends only new provider keys', async () => {
   const calls = [];
   const api = createCredentialApi(async (...args) => { calls.push(args); return { ok: true }; });
@@ -140,6 +146,70 @@ test('keeps an issued key transiently and clears it when the user dismisses the 
 
   manager.clearIssuedKey();
   assert.equal(manager.getState().issuedApiKey, null);
+});
+
+test('keeps a pending provider save current when provider status is refreshed', async () => {
+  const saveResponse = deferred();
+  let backend = { name: 'openrouter', configured: true, source: 'configuration' };
+  const manager = createCredentialManager({
+    getGatewayId: () => 'gateway-a',
+    api: {
+      setBackendCredential: async () => {
+        await saveResponse.promise;
+        backend = { name: 'openrouter', configured: true, source: 'runtime' };
+      },
+      getBackendCredentials: async () => ({ data: { backends: [backend] } }),
+    },
+  });
+
+  const saving = manager.saveProviderCredential('openrouter', 'new-provider-key');
+  assert.equal(manager.getState().providerBusy, 'openrouter');
+  assert.equal(await manager.loadProviders(), true);
+  saveResponse.resolve();
+
+  assert.equal(await saving, true);
+  assert.equal(manager.getState().providerBusy, null);
+  assert.equal(manager.getState().backends[0].source, 'runtime');
+});
+
+test('keeps a pending Gateway Key issue current when key records are refreshed', async () => {
+  const issueResponse = deferred();
+  const manager = createCredentialManager({
+    getGatewayId: () => 'gateway-a',
+    api: {
+      issueGatewayKey: () => issueResponse.promise,
+      listGatewayKeys: async (limit, offset) => ({ data: { keys: [], limit, offset } }),
+    },
+  });
+
+  const issuing = manager.issueGatewayKey('desktop-dev', null);
+  assert.equal(manager.getState().keyBusy, 'issue');
+  assert.equal(await manager.loadKeys(0), true);
+  issueResponse.resolve({ data: { apiKey: 'sk-aigw-once.secret' } });
+
+  assert.equal(await issuing, true);
+  assert.equal(manager.getState().issuedApiKey, 'sk-aigw-once.secret');
+  assert.equal(manager.getState().keyBusy, null);
+});
+
+test('clearing the issue result cancels a pending Gateway Key response', async () => {
+  const issueResponse = deferred();
+  const manager = createCredentialManager({
+    getGatewayId: () => 'gateway-a',
+    api: {
+      issueGatewayKey: () => issueResponse.promise,
+      listGatewayKeys: async (limit, offset) => ({ data: { keys: [], limit, offset } }),
+    },
+  });
+
+  const issuing = manager.issueGatewayKey('desktop-dev', null);
+  manager.clearIssuedKey();
+  assert.equal(manager.getState().keyBusy, null);
+
+  issueResponse.resolve({ data: { apiKey: 'sk-aigw-once.secret' } });
+  assert.equal(await issuing, false);
+  assert.equal(manager.getState().issuedApiKey, null);
+  assert.equal(manager.getState().keyBusy, null);
 });
 
 test('saves and restores provider overrides and revokes a gateway key through the manager', async () => {
