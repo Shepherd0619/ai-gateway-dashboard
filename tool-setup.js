@@ -1,4 +1,4 @@
-import { normalizeGatewayUrl, getDocModels, resolveDocRoute, resolveDocBackendTranslation, buildProtocolTranslationGuidance, buildSnippets, readProductionDocs } from './tool-docs.js?v=20261111.1';
+import { normalizeGatewayUrl, getDocModels, resolveDocRoute, resolveDocBackendTranslation, buildProtocolTranslationGuidance, buildSnippets, readProductionDocs } from './tool-docs.js?v=20261124.1';
 
 const $ = id => document.getElementById(id);
 const storageKey = 'aiGatewayAdmin.v1';
@@ -65,17 +65,18 @@ function missingModel(parent,family) { paragraph(parent,`No verified ${family} m
 
 function render() {
   const content=$('doc-content'); content.replaceChildren();
-  const page=['claude-code','codex','api','models'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'claude-code';
+  const page=['claude-code','codex','opencode','api','models'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'claude-code';
   document.querySelectorAll('#doc-nav a').forEach(anchor=>{
     if (anchor.hash===`#${page}`) anchor.setAttribute('aria-current','page'); else anchor.removeAttribute('aria-current');
   });
   content.setAttribute('aria-busy',String(loading));
   if (!snapshot) {
-    heading(content,'Tool Setup', 'Connect Claude and OpenAI clients using the current gateway configuration.');
+    heading(content,'Tool Setup', 'Connect Claude, OpenAI, and OpenCode clients using the current gateway configuration.');
     paragraph(content,loading ? 'Loading the model catalog and routes…' : 'Configuration has not loaded. Check the gateway connection, then select Refresh configuration.','empty-note');
     return;
   }
-  const snippets=buildSnippets({baseUrl:gateway.baseUrl,claudeModel,openaiModel,shell:$('docs-shell').value});
+  const openaiDisplayName=snapshot.models.find(model=>model.id===openaiModel)?.displayName || '';
+  const snippets=buildSnippets({baseUrl:gateway.baseUrl,claudeModel,openaiModel,openaiDisplayName,shell:$('docs-shell').value});
   if (page==='claude-code') {
     heading(content,'Claude Code','Use the current gateway through the Anthropic Messages API in your terminal or IDE.');
     routeNote(content,claudeModel);
@@ -103,6 +104,15 @@ function render() {
     const start=section('3. Set credentials and launch',content); code(start,$('docs-shell').selectedOptions[0].textContent,snippets.codexShell);
     paragraph(start,'Set AI_GATEWAY_API_KEY to your upstream key. Do not use the admin key. After launch, use /status to check the provider and model. For desktop apps, ensure the process can read the environment variable and restart after changing configuration.');
     link(start,'OpenAI gateway connection guide','https://learn.chatgpt.com/docs/enterprise/connect-to-a-gateway');
+  } else if (page==='opencode') {
+    heading(content,'OpenCode','Use the OpenAI-compatible provider package to connect OpenCode to the current gateway.');
+    paragraph(content,'Choose a model that supports the gateway’s OpenAI-compatible endpoint. The selected OpenAI model below is used in the generated provider configuration.','notice');
+    const config=section('1. Configure the provider',content);
+    paragraph(config,'Merge this into ~/.config/opencode/opencode.jsonc (Windows: %USERPROFILE%\\.config\\opencode\\opencode.jsonc). Preserve your existing configuration.');
+    if (openaiModel) code(config,'opencode.jsonc',snippets.opencodeConfig); else missingModel(config,'OpenAI-compatible');
+    const start=section('2. Set credentials and launch',content);
+    code(start,$('docs-shell').selectedOptions[0].textContent,snippets.opencodeShell);
+    paragraph(start,'ANTHROPIC_AUTH_TOKEN should contain your upstream API key. Do not use the admin key. Restart OpenCode after changing its configuration or environment.');
   } else if (page==='api') {
     heading(content,'API Clients','Choose the Anthropic or OpenAI SDK for your client protocol. Anthropic Messages behavior follows the selected route’s backend translation setting.');
     routeNote(content,claudeModel);
