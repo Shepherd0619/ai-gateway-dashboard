@@ -1,5 +1,5 @@
 // Shared generation and read-only production configuration loading.
-import { normalizeBackendTranslationResponse } from './routing.js?v=20261111.1';
+import { normalizeBackendTranslationResponse } from './routing.js?v=20261124.1';
 
 export function normalizeGatewayUrl(value) {
   const url = new URL(String(value).trim());
@@ -71,11 +71,23 @@ export function getDocModels(models, mappings) {
 
 const quote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
 const psQuote = value => `'${String(value).replaceAll("'", "''")}'`;
-export function buildSnippets({baseUrl, claudeModel, openaiModel, shell = 'powershell'}) {
+export function buildSnippets({baseUrl, claudeModel, openaiModel, openaiDisplayName = '', shell = 'powershell'}) {
   const root = normalizeGatewayUrl(baseUrl);
   const api = `${root}/v1`;
   const env = {ANTHROPIC_BASE_URL: root, ...(claudeModel ? {ANTHROPIC_MODEL: claudeModel} : {})};
   const powershell = shell === 'powershell';
+  const opencodeConfig = openaiModel ? JSON.stringify({
+    $schema:'https://opencode.ai/config.json',
+    providers:{
+      'ai-gateway':{
+        name:'AI Gateway',
+        env:['ANTHROPIC_AUTH_TOKEN'],
+        package:'@opencode/ai/providers/openai-compatible',
+        settings:{baseURL:api},
+        models:{[openaiModel]:{name:openaiDisplayName || openaiModel}},
+      },
+    },
+  }, null, 2) : '';
   function credentials(key) {
     if (powershell) return `$env:${key} = Read-Host 'Upstream API Key' -MaskInput`;
     if (shell === 'zsh') return `read -rs '${key}?Upstream API Key: '\nexport ${key}`;
@@ -87,6 +99,8 @@ export function buildSnippets({baseUrl, claudeModel, openaiModel, shell = 'power
     claudeShell: [...claudeEnv, credentials('ANTHROPIC_AUTH_TOKEN'), 'claude'].join('\n'),
     codexConfig: openaiModel ? `model = ${JSON.stringify(openaiModel)}\nmodel_provider = "ai-gateway"\nweb_search = "disabled"\n\n[model_providers.ai-gateway]\nname = "AI Gateway"\nbase_url = ${JSON.stringify(api)}\nwire_api = "responses"\nenv_key = "AI_GATEWAY_API_KEY"\nrequires_openai_auth = false\nsupports_websockets = false` : '',
     codexShell: `${credentials('AI_GATEWAY_API_KEY')}\ncodex`,
+    opencodeConfig,
+    opencodeShell: `${credentials('ANTHROPIC_AUTH_TOKEN')}\nopencode`,
     claudePython: claudeModel ? `import os\nfrom anthropic import Anthropic\n\nclient = Anthropic(\n    api_key=os.environ["AI_GATEWAY_API_KEY"],\n    base_url=${JSON.stringify(root)},\n)\nmessage = client.messages.create(\n    model=${JSON.stringify(claudeModel)},\n    max_tokens=256,\n    messages=[{"role": "user", "content": "Hello!"}],\n)\nprint(message.content[0].text)` : '',
     openaiPython: openaiModel ? `import os\nfrom openai import OpenAI\n\nclient = OpenAI(\n    api_key=os.environ["AI_GATEWAY_API_KEY"],\n    base_url=${JSON.stringify(api)},\n)\nresponse = client.chat.completions.create(\n    model=${JSON.stringify(openaiModel)},\n    messages=[{"role": "user", "content": "Hello!"}],\n)\nprint(response.choices[0].message.content)` : '',
     modelList: powershell ? `Invoke-RestMethod -Uri ${psQuote(`${api}/models`)}` : `curl ${quote(`${api}/models`)}`,

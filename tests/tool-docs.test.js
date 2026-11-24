@@ -50,6 +50,22 @@ test('generated configs use the chosen URL and model without any admin credentia
   assert.doesNotMatch(Object.values(snippets).join('\n'), /rightcapital|vertex|x-admin-key/i);
 });
 
+test('OpenCode config uses the selected gateway, model, provider package, and upstream credential', () => {
+  const snippets = buildSnippets({baseUrl:'https://example.test/gateway/',claudeModel:'claude-sonnet',openaiModel:'openai/new-model',openaiDisplayName:'New Model',shell:'powershell'});
+  const config = JSON.parse(snippets.opencodeConfig);
+  assert.equal(config.$schema, 'https://opencode.ai/config.json');
+  assert.deepEqual(config.providers['ai-gateway'], {
+    name:'AI Gateway',
+    env:['ANTHROPIC_AUTH_TOKEN'],
+    package:'@opencode/ai/providers/openai-compatible',
+    settings:{baseURL:'https://example.test/gateway/v1'},
+    models:{'openai/new-model':{name:'New Model'}},
+  });
+  assert.match(snippets.opencodeShell, /ANTHROPIC_AUTH_TOKEN/);
+  assert.match(snippets.opencodeShell, /opencode$/);
+  assert.doesNotMatch(snippets.opencodeConfig + snippets.opencodeShell, /x-admin-key|rightcapital/i);
+});
+
 test('live loader only reads admin endpoints and keeps admin key in request headers', async () => {
   const calls=[];
   const fetcher=async (url, options) => {

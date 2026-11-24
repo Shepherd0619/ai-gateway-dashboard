@@ -1,6 +1,6 @@
 # Tool setup documentation
 
-Open [Tool Setup](../../tool-setup.html), or select **Tool Setup** in the dashboard navigation. The English guide covers Claude Code, OpenAI Codex, Anthropic and OpenAI Python SDKs, and live model routing.
+Open [Tool Setup](../../tool-setup.html), or select **Tool Setup** in the dashboard navigation. The English guide covers Claude Code, OpenAI Codex, OpenCode, Anthropic and OpenAI Python SDKs, and live model routing.
 
 ## Production data sources
 
@@ -20,7 +20,7 @@ On Claude Code and API Clients, protocol guidance uses the selected Claude model
 
 Gateway protocol translation and upstream model capability are separate. Translation settings describe the gateway's protocol behavior; model names, catalog entries, and health checks do not prove that a model supports the resulting protocol or client features. Verify inference, tool calls, and multi-turn behavior with the upstream provider.
 
-Credential commands prompt for the reader's own upstream API key. The page does not collect, store, or copy real inference keys. PowerShell 7.1+, Bash, and Zsh are supported. Codex uses `env_key = "AI_GATEWAY_API_KEY"` and the Responses API.
+Credential commands prompt for the reader's own upstream API key. The page does not collect, store, or copy real inference keys. PowerShell 7.1+, Bash, and Zsh are supported. Codex uses `env_key = "AI_GATEWAY_API_KEY"` and the Responses API. OpenCode uses the `@opencode/ai/providers/openai-compatible` provider package, the selected OpenAI model, and `ANTHROPIC_AUTH_TOKEN`.
 
 Claude Desktop deployment settings and other vendors are outside the current scope. The webpage replaces the earlier reference-site Markdown and its dedicated scripts.
 
@@ -28,7 +28,7 @@ Claude Desktop deployment settings and other vendors are outside the current sco
 
 - `tool-setup.html` and `tool-setup.css`: documentation layout using the shared dashboard theme, with no third-party dependencies.
 - `tool-setup.js`: navigation, gateway and model selection, read-only synchronization, copying, and status messages.
-- `tool-docs.js`: configuration loading, route resolution, backend translation status and guidance, and example generation.
+- `tool-docs.js`: configuration loading, route resolution, backend translation status and guidance, and example generation for Claude Code, Codex, and OpenCode.
 - `tests/tool-docs.test.js`: optional translation-setting reads, malformed and failed translation responses, no-admin-key behavior, exact selected-route backend resolution through chained mappings, protocol guidance, credential boundaries, and generated examples.
 
 Serve `tool-setup.html` with a static HTTP server. Deploy it under the same origin as the dashboard to share saved gateway configuration. Gateway CORS must allow that origin.
