@@ -12,7 +12,7 @@ function localAssetReferences(source, pattern) {
   return [...source.matchAll(pattern)].map(match => match[1]);
 }
 
-test('static entrypoints and local module imports share a cache version', async () => {
+test('static entrypoints, stylesheets, and transitive modules share a cache version', async () => {
   const index = await read('index.html');
   const setup = await read('tool-setup.html');
   const indexAssets = localAssetReferences(index, /(?:src|href)="([^\"]+\.(?:js|css)(?:\?[^\"]*)?)"/g);
@@ -27,10 +27,20 @@ test('static entrypoints and local module imports share a cache version', async 
     }
   }
 
-  for (const file of ['app.js', 'tool-docs.js', 'tool-setup.js']) {
+  const visited = new Set();
+  async function visitModule(file) {
+    if (visited.has(file)) return;
+    visited.add(file);
     const source = await read(file);
-    for (const asset of localAssetReferences(source, /\bfrom\s+['"]([^'"]+)['"]/g)) {
+    const imports = localAssetReferences(source, /\b(?:import|export)\s+(?:[^'"]*?\s+from\s*)?['"]([^'"]+)['"]/g);
+    for (const asset of imports) {
       assert.equal(new URL(asset, 'http://localhost/').searchParams.get('v'), version, `${file}: ${asset}`);
+      const resolved = new URL(asset, 'http://localhost/' + file);
+      if (resolved.origin === 'http://localhost' && /\.js$/i.test(resolved.pathname)) {
+        await visitModule(decodeURIComponent(resolved.pathname.replace(/^\//, '')));
+      }
     }
   }
+
+  for (const file of ['app.js', 'tool-docs.js', 'tool-setup.js']) await visitModule(file);
 });
