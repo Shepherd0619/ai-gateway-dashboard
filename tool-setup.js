@@ -1,4 +1,4 @@
-import { normalizeGatewayUrl, getDocModels, resolveDocRoute, resolveDocBackendTranslation, buildProtocolTranslationGuidance, buildSnippets, readProductionDocs } from './tool-docs.js?v=20261124.1';
+import { normalizeGatewayUrl, getDocModels, resolveDocRoute, resolveDocBackendTranslation, buildProtocolTranslationGuidance, buildSnippets, readProductionDocs } from './tool-docs.js?v=20261128.1';
 
 const $ = id => document.getElementById(id);
 const storageKey = 'aiGatewayAdmin.v1';

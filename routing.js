@@ -4,12 +4,30 @@ function valueOf(object, camel, pascal, fallback) {
   return fallback;
 }
 
+function normalizeMappingProxyServers(rule) {
+  var proxyServers = valueOf(rule, 'proxyServers', 'ProxyServers', undefined);
+  if (proxyServers !== undefined) return Array.isArray(proxyServers) ? proxyServers.slice() : null;
+
+  var legacyProxyServer = valueOf(rule, 'proxyServer', 'ProxyServer', null);
+  if (legacyProxyServer == null) return null;
+  return legacyProxyServer === '' ? [] : [legacyProxyServer];
+}
+
+function normalizeClassifierProxyServers(config) {
+  var proxyServers = valueOf(config, 'proxyServers', 'ProxyServers', undefined);
+  if (proxyServers !== undefined) return Array.isArray(proxyServers) ? proxyServers.slice() : [];
+
+  var legacyProxyServer = valueOf(config, 'proxyServer', 'ProxyServer', null);
+  if (legacyProxyServer == null || legacyProxyServer === '') return [];
+  return [legacyProxyServer];
+}
+
 function normalizeRule(rule) {
   return {
     prefix: valueOf(rule, 'prefix', 'Prefix', ''),
     target: valueOf(rule, 'target', 'Target', ''),
     backend: valueOf(rule, 'backend', 'Backend', 'openrouter') || 'openrouter',
-    proxyServer: valueOf(rule, 'proxyServer', 'ProxyServer', null),
+    proxyServers: normalizeMappingProxyServers(rule),
   };
 }
 
@@ -18,7 +36,7 @@ function normalizeClassifier(config) {
   return {
     target: valueOf(config, 'target', 'Target', null),
     backend: valueOf(config, 'backend', 'Backend', null),
-    proxyServer: valueOf(config, 'proxyServer', 'ProxyServer', null),
+    proxyServers: normalizeClassifierProxyServers(config),
     source: valueOf(config, 'source', 'Source', 'base'),
   };
 }
@@ -27,7 +45,7 @@ function buildMappingPatch(route) {
   return {
     target: route.target || '',
     backend: route.backend || null,
-    proxyServer: route.proxyServer == null ? null : route.proxyServer,
+    proxyServers: Array.isArray(route.proxyServers) ? route.proxyServers.slice() : null,
   };
 }
 
@@ -36,7 +54,7 @@ function buildClassifierPut(route) {
   return {
     target: target,
     backend: target ? (route.backend || null) : null,
-    proxyServer: target ? (route.proxyServer == null ? null : route.proxyServer) : null,
+    proxyServers: Array.isArray(route.proxyServers) ? route.proxyServers.slice() : [],
   };
 }
 
@@ -151,23 +169,30 @@ function buildHardenConfig(rules, classifier, modelDiscovery, backendTranslation
     ModelMapping: {
       Rules: (rules || []).map(function (rule) {
         var normalized = normalizeRule(rule);
-        return {
+        var exportedRule = {
           Prefix: normalized.prefix,
           Target: normalized.target,
           Backend: normalized.backend,
-          ProxyServer: normalized.proxyServer,
         };
+        if (Array.isArray(normalized.proxyServers) && normalized.proxyServers.length === 0) {
+          // The configuration binder drops empty JSON arrays; the legacy empty
+          // scalar is still accepted and normalizes back to an explicit list.
+          exportedRule.ProxyServers = null;
+          exportedRule.ProxyServer = '';
+        } else {
+          exportedRule.ProxyServers = normalized.proxyServers;
+        }
+        return exportedRule;
       }),
     },
-    Classifier: classifier ? {
-      Target: classifier.target || null,
-      Backend: classifier.backend || null,
-      ProxyServer: classifier.proxyServer == null ? null : classifier.proxyServer,
-    } : {
-      Target: null,
-      Backend: null,
-      ProxyServer: null,
-    },
+    Classifier: (function () {
+      var normalizedClassifier = normalizeClassifier(classifier) || { target: null, backend: null, proxyServers: [] };
+      return {
+        Target: normalizedClassifier.target || null,
+        Backend: normalizedClassifier.backend || null,
+        ProxyServers: normalizedClassifier.proxyServers,
+      };
+    }()),
   };
   if (modelDiscovery !== undefined) {
     config.ModelDiscovery = {
@@ -232,12 +257,32 @@ function collectProxyNames(rules, classifier, configuredNames) {
     if (name && names.indexOf(name) === -1) names.push(name);
   }
   (rules || []).forEach(function (rule) {
-    addName(normalizeRule(rule).proxyServer);
+    var proxyServers = normalizeRule(rule).proxyServers;
+    if (Array.isArray(proxyServers)) proxyServers.forEach(addName);
   });
   var normalizedClassifier = normalizeClassifier(classifier);
-  if (normalizedClassifier) addName(normalizedClassifier.proxyServer);
+  if (normalizedClassifier) normalizedClassifier.proxyServers.forEach(addName);
   (configuredNames || []).forEach(addName);
   return names;
+}
+
+function moveProxyServer(proxyServers, index, delta) {
+  var moved = Array.isArray(proxyServers) ? proxyServers.slice() : [];
+  var targetIndex = index + delta;
+  if ((delta !== -1 && delta !== 1) || !Number.isInteger(index) ||
+      targetIndex < 0 || targetIndex >= moved.length) return moved;
+
+  var current = moved[index];
+  moved[index] = moved[targetIndex];
+  moved[targetIndex] = current;
+  return moved;
+}
+
+function removeProxyServerAt(proxyServers, index) {
+  var remaining = Array.isArray(proxyServers) ? proxyServers.slice() : [];
+  if (!Number.isInteger(index) || index < 0 || index >= remaining.length) return remaining;
+  remaining.splice(index, 1);
+  return remaining;
 }
 
 function buildHardenEnvLines(rules, classifier, modelDiscovery, backendTranslations) {
@@ -248,15 +293,26 @@ function buildHardenEnvLines(rules, classifier, modelDiscovery, backendTranslati
     lines.push('      - ModelMapping__Rules__' + index + '__Prefix=' + normalized.prefix);
     lines.push('      - ModelMapping__Rules__' + index + '__Target=' + normalized.target);
     lines.push('      - ModelMapping__Rules__' + index + '__Backend=' + normalized.backend);
-    if (normalized.proxyServer !== null && normalized.proxyServer !== undefined) {
-      lines.push('      - ModelMapping__Rules__' + index + '__ProxyServer=' + normalized.proxyServer);
+    if (normalized.proxyServers !== null && normalized.proxyServers !== undefined) {
+      var proxyPrefix = '      - ModelMapping__Rules__' + index + '__ProxyServers';
+      if (normalized.proxyServers.length === 0) {
+        lines.push('      - ModelMapping__Rules__' + index + '__ProxyServer=');
+      } else {
+        normalized.proxyServers.forEach(function (proxyServer, proxyIndex) {
+          lines.push(proxyPrefix + '__' + proxyIndex + '=' + proxyServer);
+        });
+      }
     }
   });
-  var normalizedClassifier = normalizeClassifier(classifier) || {};
+  var normalizedClassifier = normalizeClassifier(classifier) || { target: null, backend: null, proxyServers: [] };
   lines.push('      - Classifier__Target=' + (normalizedClassifier.target || ''));
   lines.push('      - Classifier__Backend=' + (normalizedClassifier.backend || ''));
-  if (normalizedClassifier.proxyServer !== null && normalizedClassifier.proxyServer !== undefined) {
-    lines.push('      - Classifier__ProxyServer=' + normalizedClassifier.proxyServer);
+  if (normalizedClassifier.proxyServers.length === 0) {
+    lines.push('      - Classifier__ProxyServers=');
+  } else {
+    normalizedClassifier.proxyServers.forEach(function (proxyServer, proxyIndex) {
+      lines.push('      - Classifier__ProxyServers__' + proxyIndex + '=' + proxyServer);
+    });
   }
   if (modelDiscovery !== undefined) {
     lines.push('      - ModelDiscovery__Enabled=' + catalog.enabled);
@@ -290,5 +346,7 @@ export {
   normalizeBackendNames,
   collectBackendNames,
   collectProxyNames,
+  moveProxyServer,
+  removeProxyServerAt,
   buildHardenEnvLines,
 };
