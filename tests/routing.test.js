@@ -2,70 +2,102 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as routing from '../routing.js';
 
+test('moves a proxy up one priority while preserving the other entries', () => {
+  assert.deepEqual(routing.moveProxyServer(['us-exit', 'eu-exit', 'ap-exit'], 1, -1), [
+    'eu-exit', 'us-exit', 'ap-exit',
+  ]);
+});
+
+test('moves a proxy down one priority while preserving the other entries', () => {
+  assert.deepEqual(routing.moveProxyServer(['us-exit', 'eu-exit', 'ap-exit'], 1, 1), [
+    'us-exit', 'ap-exit', 'eu-exit',
+  ]);
+});
+
+test('does not move a proxy beyond the ends of the priority list', () => {
+  assert.deepEqual(routing.moveProxyServer(['us-exit', 'eu-exit'], 0, -1), ['us-exit', 'eu-exit']);
+  assert.deepEqual(routing.moveProxyServer(['us-exit', 'eu-exit'], 1, 1), ['us-exit', 'eu-exit']);
+});
+
+test('removes a proxy without changing the order of the remaining entries', () => {
+  assert.deepEqual(routing.removeProxyServerAt(['us-exit', 'eu-exit', 'ap-exit'], 1), [
+    'us-exit', 'ap-exit',
+  ]);
+});
+
 test('normalizes a mapping with an omitted backend to openrouter', () => {
-  assert.deepEqual(routing.normalizeRule({ prefix: 'claude', target: '', proxyServer: null }), {
-    prefix: 'claude', target: '', backend: 'openrouter', proxyServer: null,
+  assert.deepEqual(routing.normalizeRule({ prefix: 'claude', target: '', proxyServers: null }), {
+    prefix: 'claude', target: '', backend: 'openrouter', proxyServers: null,
   });
 });
 
 test('builds a mapping PATCH without putting backend in target', () => {
-  assert.deepEqual(routing.buildMappingPatch({ target: 'local-model', backend: 'lmstudio', proxyServer: null }), {
-    target: 'local-model', backend: 'lmstudio', proxyServer: null,
+  assert.deepEqual(routing.buildMappingPatch({ target: 'local-model', backend: 'lmstudio', proxyServers: null }), {
+    target: 'local-model', backend: 'lmstudio', proxyServers: null,
   });
 });
 
 test('builds an independent classifier PUT with Target, not TargetModel', () => {
-  const body = routing.buildClassifierPut({ target: 'local-classifier', backend: 'lmstudio', proxyServer: null });
-  assert.deepEqual(body, { target: 'local-classifier', backend: 'lmstudio', proxyServer: null });
+  const body = routing.buildClassifierPut({ target: 'local-classifier', backend: 'lmstudio', proxyServers: ['us-exit', 'eu-exit'] });
+  assert.deepEqual(body, { target: 'local-classifier', backend: 'lmstudio', proxyServers: ['us-exit', 'eu-exit'] });
   assert.equal(JSON.stringify(body).includes('TargetModel'), false);
 });
 
-test('preserves null, empty, and named proxy states when normalizing', () => {
-  for (const proxyServer of [null, '', 'corp']) {
-    assert.equal(routing.normalizeRule({ proxyServer }).proxyServer, proxyServer);
-    assert.equal(routing.normalizeClassifier({ proxyServer }).proxyServer, proxyServer);
-  }
+test('normalizes ordered camelCase and PascalCase proxy arrays', () => {
+  assert.deepEqual(routing.normalizeRule({ proxyServers: ['us-exit', 'eu-exit'] }).proxyServers, ['us-exit', 'eu-exit']);
+  assert.deepEqual(routing.normalizeRule({ ProxyServers: ['eu-exit', 'us-exit'] }).proxyServers, ['eu-exit', 'us-exit']);
+  assert.deepEqual(routing.normalizeClassifier({ proxyServers: ['us-exit', 'eu-exit'] }).proxyServers, ['us-exit', 'eu-exit']);
+  assert.deepEqual(routing.normalizeClassifier({ ProxyServers: ['eu-exit', 'us-exit'] }).proxyServers, ['eu-exit', 'us-exit']);
 });
 
-test('builds mapping PATCH bodies for all proxy states', () => {
-  for (const proxyServer of [null, '', 'corp']) {
-    assert.deepEqual(routing.buildMappingPatch({ target: 'model', backend: 'lmstudio', proxyServer }), {
-      target: 'model', backend: 'lmstudio', proxyServer,
-    });
-  }
+test('reads legacy scalar proxy values as zero or one proxy', () => {
+  assert.deepEqual(routing.normalizeRule({ proxyServer: 'corp' }).proxyServers, ['corp']);
+  assert.deepEqual(routing.normalizeClassifier({ proxyServer: 'corp' }).proxyServers, ['corp']);
+  assert.deepEqual(routing.normalizeRule({ proxyServer: '' }).proxyServers, []);
+  assert.deepEqual(routing.normalizeClassifier({ proxyServer: '' }).proxyServers, []);
 });
 
-test('builds classifier PUT bodies for all enabled proxy states', () => {
-  for (const proxyServer of [null, '', 'corp']) {
-    assert.deepEqual(routing.buildClassifierPut({ target: 'classifier', backend: 'lmstudio', proxyServer }), {
-      target: 'classifier', backend: 'lmstudio', proxyServer,
-    });
-  }
+test('keeps mapping null distinct from an explicit empty proxy array', () => {
+  assert.equal(routing.normalizeRule({}).proxyServers, null);
+  assert.equal(routing.normalizeRule({ proxyServers: null }).proxyServers, null);
+  assert.deepEqual(routing.normalizeRule({ proxyServers: [] }).proxyServers, []);
+  assert.deepEqual(routing.buildMappingPatch({ target: 'model', backend: 'lmstudio', proxyServers: [] }), {
+    target: 'model', backend: 'lmstudio', proxyServers: [],
+  });
 });
 
-test('exports an explicit direct proxy override as an empty string', () => {
+test('writes only ordered proxyServers arrays in new route requests', () => {
+  assert.deepEqual(routing.buildMappingPatch({ target: 'model', backend: 'lmstudio', proxyServers: ['us-exit', 'eu-exit'] }), {
+    target: 'model', backend: 'lmstudio', proxyServers: ['us-exit', 'eu-exit'],
+  });
+  assert.deepEqual(routing.buildClassifierPut({ target: 'classifier', backend: 'lmstudio', proxyServers: [] }), {
+    target: 'classifier', backend: 'lmstudio', proxyServers: [],
+  });
+});
+
+test('exports an explicit direct proxy override as an empty array', () => {
   assert.deepEqual(routing.buildHardenConfig([
-    { prefix: 'claude', target: 'model', backend: 'lmstudio', proxyServer: '' },
-  ], { target: 'classifier', backend: 'lmstudio', proxyServer: '' }), {
-    ModelMapping: { Rules: [{ Prefix: 'claude', Target: 'model', Backend: 'lmstudio', ProxyServer: '' }] },
-    Classifier: { Target: 'classifier', Backend: 'lmstudio', ProxyServer: '' },
+    { prefix: 'claude', target: 'model', backend: 'lmstudio', proxyServers: [] },
+  ], { target: 'classifier', backend: 'lmstudio', proxyServers: [] }), {
+    ModelMapping: { Rules: [{ Prefix: 'claude', Target: 'model', Backend: 'lmstudio', ProxyServers: null, ProxyServer: '' }] },
+    Classifier: { Target: 'classifier', Backend: 'lmstudio', ProxyServers: [] },
   });
 });
 
 
-test('clearing classifier target produces a fully disabled route', () => {
-  assert.deepEqual(routing.buildClassifierPut({ target: '', backend: 'lmstudio', proxyServer: 'corp' }), {
-    target: null, backend: null, proxyServer: null,
+test('disabling classifier preserves its saved proxy list', () => {
+  assert.deepEqual(routing.buildClassifierPut({ target: '', backend: 'lmstudio', proxyServers: ['us-exit', 'eu-exit'] }), {
+    target: null, backend: null, proxyServers: ['us-exit', 'eu-exit'],
   });
 });
 
 test('exports backend and independent classifier route', () => {
   const output = routing.buildHardenConfig([
-    { prefix: 'claude-local', target: 'local-model', backend: 'lmstudio', proxyServer: null },
-  ], { target: 'local-classifier', backend: 'lmstudio', proxyServer: 'corp' });
+    { prefix: 'claude-local', target: 'local-model', backend: 'lmstudio', proxyServers: null },
+  ], { target: 'local-classifier', backend: 'lmstudio', proxyServers: ['corp', 'edge'] });
   assert.deepEqual(output, {
-    ModelMapping: { Rules: [{ Prefix: 'claude-local', Target: 'local-model', Backend: 'lmstudio', ProxyServer: null }] },
-    Classifier: { Target: 'local-classifier', Backend: 'lmstudio', ProxyServer: 'corp' },
+    ModelMapping: { Rules: [{ Prefix: 'claude-local', Target: 'local-model', Backend: 'lmstudio', ProxyServers: null }] },
+    Classifier: { Target: 'local-classifier', Backend: 'lmstudio', ProxyServers: ['corp', 'edge'] },
   });
   assert.equal(JSON.stringify(output).includes('TargetModel'), false);
 });
@@ -86,25 +118,32 @@ test('collects backend and proxy choices dynamically', () => {
   assert.deepEqual(routing.collectBackendNames([{ backend: 'lmstudio' }], { backend: 'ollama' }), [
     'openrouter', 'lmstudio', 'ollama',
   ]);
-  assert.deepEqual(routing.collectProxyNames([{ proxyServer: 'corp' }], { proxyServer: 'edge' }), [
-    'corp', 'edge',
+  assert.deepEqual(routing.collectProxyNames([{ proxyServers: ['corp', 'west'] }], { proxyServers: ['edge', 'west'] }), [
+    'corp', 'west', 'edge',
   ]);
+});
+
+test('collects proxy choices when some mapping rules inherit the proxy list', () => {
+  assert.deepEqual(routing.collectProxyNames([
+    { proxyServers: null },
+    { proxyServers: ['us-exit', 'eu-exit'] },
+  ]), ['us-exit', 'eu-exit']);
 });
 
 test('includes configured proxies that are not referenced by a route', () => {
   assert.deepEqual(routing.collectProxyNames(
-    [{ proxyServer: 'us-exit' }],
+    [{ proxyServers: ['us-exit'] }],
     null,
     ['us-exit', 'us-exit-aliyun'],
   ), ['us-exit', 'us-exit-aliyun']);
 });
 
-test('exports Compose env without conflating inherited and direct proxy states', () => {
+test('exports ordered Compose proxy variables without conflating inherited and direct states', () => {
   assert.deepEqual(routing.buildHardenEnvLines([
-    { prefix: 'inherit', target: 'model-a', backend: 'openrouter', proxyServer: null },
-    { prefix: 'direct', target: 'model-b', backend: 'openrouter', proxyServer: '' },
-    { prefix: 'named', target: 'model-c', backend: 'openrouter', proxyServer: 'corp' },
-  ], { target: 'classifier', backend: 'openrouter', proxyServer: null }), [
+    { prefix: 'inherit', target: 'model-a', backend: 'openrouter', proxyServers: null },
+    { prefix: 'direct', target: 'model-b', backend: 'openrouter', proxyServers: [] },
+    { prefix: 'named', target: 'model-c', backend: 'openrouter', proxyServers: ['us-exit', 'eu-exit'] },
+  ], { target: 'classifier', backend: 'openrouter', proxyServers: ['classifier-exit', 'backup-exit'] }), [
     '      - ModelMapping__Rules__0__Prefix=inherit',
     '      - ModelMapping__Rules__0__Target=model-a',
     '      - ModelMapping__Rules__0__Backend=openrouter',
@@ -115,21 +154,28 @@ test('exports Compose env without conflating inherited and direct proxy states',
     '      - ModelMapping__Rules__2__Prefix=named',
     '      - ModelMapping__Rules__2__Target=model-c',
     '      - ModelMapping__Rules__2__Backend=openrouter',
-    '      - ModelMapping__Rules__2__ProxyServer=corp',
+    '      - ModelMapping__Rules__2__ProxyServers__0=us-exit',
+    '      - ModelMapping__Rules__2__ProxyServers__1=eu-exit',
     '      - Classifier__Target=classifier',
     '      - Classifier__Backend=openrouter',
+    '      - Classifier__ProxyServers__0=classifier-exit',
+    '      - Classifier__ProxyServers__1=backup-exit',
   ]);
 });
 
-test('exports an empty classifier proxy override in Compose env', () => {
-  assert.equal(routing.buildHardenEnvLines([], { target: 'classifier', backend: 'openrouter', proxyServer: '' }).at(-1),
-    '      - Classifier__ProxyServer=');
+test('exports an empty classifier proxy list as a bare environment key', () => {
+  assert.deepEqual(routing.buildHardenEnvLines([], { target: 'classifier', backend: 'openrouter', proxyServers: [] }), [
+    '      - Classifier__Target=classifier',
+    '      - Classifier__Backend=openrouter',
+    '      - Classifier__ProxyServers=',
+  ]);
 });
 
 test('preserves disabled classifier target and backend in Compose env', () => {
-  assert.deepEqual(routing.buildHardenEnvLines([], { target: null, backend: null, proxyServer: null }), [
+  assert.deepEqual(routing.buildHardenEnvLines([], { target: null, backend: null, proxyServers: [] }), [
     '      - Classifier__Target=',
     '      - Classifier__Backend=',
+    '      - Classifier__ProxyServers=',
   ]);
 });
 
@@ -142,7 +188,7 @@ test('exports the complete model discovery catalog in appsettings shape', () => 
     ],
   }), {
     ModelMapping: { Rules: [] },
-    Classifier: { Target: null, Backend: null, ProxyServer: null },
+    Classifier: { Target: null, Backend: null, ProxyServers: [] },
     ModelDiscovery: {
       Enabled: true,
       Models: [
@@ -163,6 +209,7 @@ test('exports model discovery as indexed Compose environment variables', () => {
   }), [
     '      - Classifier__Target=',
     '      - Classifier__Backend=',
+    '      - Classifier__ProxyServers=',
     '      - ModelDiscovery__Enabled=false',
     '      - ModelDiscovery__Models__0__Id=model-a',
     '      - ModelDiscovery__Models__0__DisplayName=Model A',
@@ -339,7 +386,7 @@ test('exports only approved backend translation fields in Harden JSON', () => {
   const output = routing.buildHardenConfig([], null, undefined, backendTranslations);
   assert.deepEqual(output, {
     ModelMapping: { Rules: [] },
-    Classifier: { Target: null, Backend: null, ProxyServer: null },
+    Classifier: { Target: null, Backend: null, ProxyServers: [] },
     Backends: {
       openrouter: {
         TranslateAnthropicToOpenAI: true,
@@ -369,6 +416,7 @@ test('exports only approved backend translation fields in Compose env', () => {
   assert.deepEqual(output, [
     '      - Classifier__Target=',
     '      - Classifier__Backend=',
+    '      - Classifier__ProxyServers=',
     '      - Backends__openrouter__TranslateAnthropicToOpenAI=true',
     '      - Backends__openrouter__OpenAIProtocol=ChatCompletions',
     '      - Backends__openrouter__ReasoningFormat=OpenRouter',
@@ -381,10 +429,11 @@ test('exports only approved backend translation fields in Compose env', () => {
 test('omitting backend translations keeps previous Harden export shapes unchanged', () => {
   assert.deepEqual(routing.buildHardenConfig([], null), {
     ModelMapping: { Rules: [] },
-    Classifier: { Target: null, Backend: null, ProxyServer: null },
+    Classifier: { Target: null, Backend: null, ProxyServers: [] },
   });
   assert.deepEqual(routing.buildHardenEnvLines([], null), [
     '      - Classifier__Target=',
     '      - Classifier__Backend=',
+    '      - Classifier__ProxyServers=',
   ]);
 });

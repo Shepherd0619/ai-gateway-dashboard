@@ -1,8 +1,8 @@
-import * as Routing from './routing.js?v=20261124.1';
-import * as ModelDiscovery from './model-discovery.js?v=20261124.1';
-import * as BackendTranslations from './backend-translations.js?v=20261124.1';
-import * as CredentialManagement from './credential-management.js?v=20261124.1';
-import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js?v=20261124.1';
+import * as Routing from './routing.js?v=20261128.1';
+import * as ModelDiscovery from './model-discovery.js?v=20261128.1';
+import * as BackendTranslations from './backend-translations.js?v=20261128.1';
+import * as CredentialManagement from './credential-management.js?v=20261128.1';
+import { getBackendHealthRows, getHealthSummary, readApiResponse } from './health.js?v=20261128.1';
 
 /* ═══════════════════════════════════════════════════════════
    AI GATEWAY · RUNTIME MAPPING CONSOLE — app logic
@@ -69,10 +69,10 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     return node;
   }
 
-  function proxyDisplayValue(proxyServer) {
-    if (proxyServer == null) return 'INHERIT';
-    if (proxyServer === '') return 'DIRECT';
-    return proxyServer;
+  function proxyDisplayValue(proxyServers) {
+    if (proxyServers == null) return 'INHERIT';
+    if (!Array.isArray(proxyServers) || proxyServers.length === 0) return 'DIRECT';
+    return proxyServers.join(' → ');
   }
 
   class ApiError extends Error {
@@ -145,15 +145,15 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     resetModelDiscovery: () => api('DELETE', '/admin/model-discovery'),
     health: () => api('GET', '/health', { requireKey: false, allowNonOkStatus: 503 }),
     proxyHealth: () => api('GET', '/admin/proxy-health'),
-    upsert: (prefix, target, backend, proxyServer) =>
+    upsert: (prefix, target, backend, proxyServers) =>
       api('PATCH', '/admin/mappings/' + encodeURIComponent(prefix), {
-        body: Routing.buildMappingPatch({ target: target, backend: backend, proxyServer: proxyServer }),
+        body: Routing.buildMappingPatch({ target: target, backend: backend, proxyServers: proxyServers }),
       }),
     remove: (prefix) => api('DELETE', '/admin/mappings/' + encodeURIComponent(prefix)),
     replaceAll: (rules) => api('PUT', '/admin/mappings', { body: rules }),
     getClassifier: () => api('GET', '/admin/classifier'),
-    setClassifier: (target, backend, proxyServer) => api('PUT', '/admin/classifier', {
-      body: Routing.buildClassifierPut({ target: target, backend: backend, proxyServer: proxyServer }),
+    setClassifier: (target, backend, proxyServers) => api('PUT', '/admin/classifier', {
+      body: Routing.buildClassifierPut({ target: target, backend: backend, proxyServers: proxyServers }),
     }),
     deleteClassifier: () => api('DELETE', '/admin/classifier'),
   };
@@ -408,7 +408,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
       const prefix = r.prefix == null ? '' : r.prefix;
       const target = r.target == null ? '' : r.target;
       const backend = r.backend || 'openrouter';
-      const proxy = r.proxyServer;
+      const proxy = r.proxyServers;
       const catchall = prefix === '';
 
       const tr = document.createElement('tr');
@@ -430,7 +430,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
       const tdBackend = el('td', 'col-backend cell-mono', backend);
 
       const tdProxy = el('td', 'col-proxy cell-mono', proxyDisplayValue(proxy));
-      if (proxy == null || proxy === '') tdProxy.classList.add('proxy-none');
+      if (proxy == null || proxy.length === 0) tdProxy.classList.add('proxy-none');
 
       const tdActions = el('td', 'col-actions');
       const rowActions = el('div', 'row-actions');
@@ -466,17 +466,6 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     return Routing.normalizeRule(r);
   }
 
-  const PROXY_INHERIT = '__proxy_inherit__';
-
-  function proxySelectValue(proxyServer) {
-    return proxyServer == null ? PROXY_INHERIT : proxyServer;
-  }
-
-  function proxyValueFromSelect(id) {
-    const value = document.getElementById(id).value;
-    return value === PROXY_INHERIT ? null : value;
-  }
-
   function populateSelect(id, values, selected, emptyLabel, allowEmpty) {
     const select = document.getElementById(id);
     if (!select) return;
@@ -502,20 +491,15 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     select.value = selected == null ? '' : selected;
   }
 
-  function populateProxySelect(id, values, selected) {
+  function populateProxyChoices(id, values) {
     const select = document.getElementById(id);
     if (!select) return;
     select.replaceChildren();
 
-    const inherit = document.createElement('option');
-    inherit.value = PROXY_INHERIT;
-    inherit.textContent = 'Inherit / no decision';
-    select.appendChild(inherit);
-
-    const direct = document.createElement('option');
-    direct.value = '';
-    direct.textContent = 'Direct / disable proxy';
-    select.appendChild(direct);
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Add configured proxy…';
+    select.appendChild(placeholder);
 
     values.forEach((value) => {
       const option = document.createElement('option');
@@ -523,24 +507,104 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
       option.textContent = value;
       select.appendChild(option);
     });
+    select.value = '';
+  }
 
-    if (selected != null && selected !== '' && values.indexOf(selected) === -1) {
-      const option = document.createElement('option');
-      option.value = selected;
-      option.textContent = selected + ' (current)';
-      select.appendChild(option);
+  function proxyChoicesFromSelect(selectId) {
+    return Array.from(document.getElementById(selectId).options)
+      .slice(1)
+      .map((option) => option.value);
+  }
+
+  function readProxyQueue(queueId) {
+    const queue = document.getElementById(queueId);
+    try {
+      const values = JSON.parse(queue.dataset.proxyServers || '[]');
+      return Array.isArray(values) ? values : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function renderProxyQueue(queueId, proxyServers, candidates) {
+    const queue = document.getElementById(queueId);
+    const values = Array.isArray(proxyServers) ? proxyServers.slice() : [];
+    const names = Array.isArray(candidates) ? candidates : [];
+    queue.dataset.proxyServers = JSON.stringify(values);
+    queue.replaceChildren();
+
+    if (values.length === 0) {
+      queue.appendChild(el('li', 'proxy-queue-empty', 'No proxies selected; use a direct connection.'));
+      return;
     }
 
-    select.value = proxySelectValue(selected);
+    values.forEach((proxyServer, index) => {
+      const row = el('li', 'proxy-queue-item');
+      row.appendChild(el('span', 'proxy-queue-priority', String(index + 1)));
+      const name = el('span', 'proxy-queue-name cell-mono', proxyServer);
+      if (names.indexOf(proxyServer) === -1) {
+        name.appendChild(document.createElement('br'));
+        name.appendChild(el('span', 'proxy-queue-unavailable', 'current, not in choices'));
+      }
+      row.appendChild(name);
+
+      const actions = el('div', 'proxy-queue-actions');
+      const up = el('button', 'reorder-btn', '↑');
+      up.type = 'button';
+      up.disabled = index === 0;
+      up.title = 'Move ' + proxyServer + ' earlier';
+      up.setAttribute('aria-label', 'Move ' + proxyServer + ' earlier in failover order');
+      up.addEventListener('click', () => {
+        renderProxyQueue(queueId, Routing.moveProxyServer(readProxyQueue(queueId), index, -1), names);
+      });
+
+      const down = el('button', 'reorder-btn', '↓');
+      down.type = 'button';
+      down.disabled = index === values.length - 1;
+      down.title = 'Move ' + proxyServer + ' later';
+      down.setAttribute('aria-label', 'Move ' + proxyServer + ' later in failover order');
+      down.addEventListener('click', () => {
+        renderProxyQueue(queueId, Routing.moveProxyServer(readProxyQueue(queueId), index, 1), names);
+      });
+
+      const remove = el('button', 'link-btn danger', 'Remove');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', 'Remove ' + proxyServer + ' from failover order');
+      remove.addEventListener('click', () => {
+        renderProxyQueue(queueId, Routing.removeProxyServerAt(readProxyQueue(queueId), index), names);
+      });
+
+      actions.append(up, down, remove);
+      row.appendChild(actions);
+      queue.appendChild(row);
+    });
+  }
+
+  function addProxyChoice(selectId, queueId) {
+    const select = document.getElementById(selectId);
+    select.addEventListener('change', () => {
+      const proxyServer = select.value;
+      if (!proxyServer) return;
+      const values = readProxyQueue(queueId);
+      if (!values.includes(proxyServer)) values.push(proxyServer);
+      renderProxyQueue(queueId, values, proxyChoicesFromSelect(selectId));
+      select.value = '';
+    });
+  }
+
+  function updateMappingProxyMode() {
+    const inherit = document.getElementById('f-proxy-mode').value === 'inherit';
+    document.getElementById('f-proxy-add').disabled = inherit;
+    document.getElementById('f-proxy-queue').hidden = inherit;
   }
 
   function refreshRouteChoices() {
     const backends = Routing.collectBackendNames(currentRules, classifierConfig, liveBackends);
     const proxies = Routing.collectProxyNames(currentRules, classifierConfig, liveProxyServers);
     populateSelect('f-backend', backends, null, 'Backend default (openrouter)', true);
-    populateProxySelect('f-proxy', proxies, null);
+    populateProxyChoices('f-proxy-add', proxies);
     populateSelect('f-classifier-backend', backends, null, 'No backend', true);
-    populateProxySelect('f-classifier-proxy', proxies, null);
+    populateProxyChoices('f-classifier-proxy-add', proxies);
   }
 
   async function reorderRule(index, dir) {
@@ -601,7 +665,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     const rows = [
       ['TARGET', config.target || '(disabled)'],
       ['BACKEND', config.backend || '—'],
-      ['PROXY SERVER', proxyDisplayValue(config.proxyServer)],
+      ['PROXY FAILOVER', proxyDisplayValue(config.proxyServers)],
       ['SOURCE', (config.source || 'base').toUpperCase()],
     ];
     rows.forEach(([label, value]) => {
@@ -815,7 +879,9 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     refreshRouteChoices();
     document.getElementById('f-classifier-target').value = config.target || '';
     populateSelect('f-classifier-backend', Routing.collectBackendNames(currentRules, classifierConfig, liveBackends), config.backend || '', 'No backend', true);
-    populateProxySelect('f-classifier-proxy', Routing.collectProxyNames(currentRules, classifierConfig, liveProxyServers), config.proxyServer);
+    const proxies = Routing.collectProxyNames(currentRules, classifierConfig, liveProxyServers);
+    populateProxyChoices('f-classifier-proxy-add', proxies);
+    renderProxyQueue('f-classifier-proxy-queue', config.proxyServers || [], proxies);
     document.getElementById('classifier-form-error').hidden = true;
     openModal('classifier-modal');
     document.getElementById('f-classifier-target').focus();
@@ -827,11 +893,11 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     const btn = document.getElementById('classifier-submit');
     const target = document.getElementById('f-classifier-target').value.trim();
     const backend = target ? (document.getElementById('f-classifier-backend').value || null) : null;
-    const proxyServer = target ? proxyValueFromSelect('f-classifier-proxy') : null;
+    const proxyServers = readProxyQueue('f-classifier-proxy-queue');
     btn.disabled = true;
     btn.textContent = 'Saving…';
     try {
-      const { data } = await Api.setClassifier(target || null, backend, proxyServer);
+      const { data } = await Api.setClassifier(target || null, backend, proxyServers);
       classifierConfig = Routing.normalizeClassifier(data);
       refreshRouteChoices();
       renderClassifier(classifierConfig);
@@ -1189,7 +1255,12 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     refreshRouteChoices();
     document.getElementById('f-target').value = mode === 'edit' ? (rule.target == null ? '' : rule.target) : '';
     populateSelect('f-backend', Routing.collectBackendNames(currentRules, classifierConfig, liveBackends), mode === 'edit' ? (rule.backend || 'openrouter') : 'openrouter', 'Backend default (openrouter)', true);
-    populateProxySelect('f-proxy', Routing.collectProxyNames(currentRules, classifierConfig, liveProxyServers), mode === 'edit' ? rule.proxyServer : null);
+    const proxies = Routing.collectProxyNames(currentRules, classifierConfig, liveProxyServers);
+    const proxyServers = mode === 'edit' ? rule.proxyServers : null;
+    populateProxyChoices('f-proxy-add', proxies);
+    document.getElementById('f-proxy-mode').value = proxyServers == null ? 'inherit' : 'explicit';
+    renderProxyQueue('f-proxy-queue', proxyServers || [], proxies);
+    updateMappingProxyMode();
     document.getElementById('f-index').value = '';
 
     const idxHint = document.getElementById('f-index-hint');
@@ -1217,7 +1288,9 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
       prefix: document.getElementById('f-prefix').value.trim(),
       target: document.getElementById('f-target').value.trim(),
       backend: document.getElementById('f-backend').value || null,
-      proxyServer: proxyValueFromSelect('f-proxy'),
+      proxyServers: document.getElementById('f-proxy-mode').value === 'inherit'
+        ? null
+        : readProxyQueue('f-proxy-queue'),
     };
   }
 
@@ -1242,10 +1315,10 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
       if (original !== null && original.toLowerCase() !== f.prefix.toLowerCase()) {
         // prefix is the primary key; changing it = delete old + add new.
         await Api.remove(original);
-        await Api.upsert(f.prefix, f.target, f.backend, f.proxyServer);
+        await Api.upsert(f.prefix, f.target, f.backend, f.proxyServers);
         toast('Deleted “' + original + '” and added “' + f.prefix + '”', 'success');
       } else {
-        await Api.upsert(f.prefix, f.target, f.backend, f.proxyServer);
+        await Api.upsert(f.prefix, f.target, f.backend, f.proxyServers);
         toast(original === null ? 'Added “' + f.prefix + '”' : 'Updated “' + f.prefix + '”', 'success');
       }
       closeModal('rule-modal');
@@ -1270,7 +1343,7 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
         if (originalIndex >= 0) list.splice(originalIndex, 1);
       }
 
-      const entry = { prefix: f.prefix, target: f.target, backend: f.backend || 'openrouter', proxyServer: f.proxyServer };
+      const entry = { prefix: f.prefix, target: f.target, backend: f.backend || 'openrouter', proxyServers: f.proxyServers };
       let pos;
       if (f.prefix === '') {
         pos = list.length; // catch-all is pinned to the end
@@ -1916,6 +1989,9 @@ import { getBackendHealthRows, getHealthSummary, readApiResponse } from './healt
     document.getElementById('gw-save').addEventListener('click', handleGwSave);
     document.getElementById('gw-cancel-edit').addEventListener('click', resetGwForm);
 
+    document.getElementById('f-proxy-mode').addEventListener('change', updateMappingProxyMode);
+    addProxyChoice('f-proxy-add', 'f-proxy-queue');
+    addProxyChoice('f-classifier-proxy-add', 'f-classifier-proxy-queue');
     document.getElementById('add-btn').addEventListener('click', () => openRuleForm('add', null));
     document.getElementById('rule-form').addEventListener('submit', handleRuleSubmit);
     document.getElementById('classifier-edit-btn').addEventListener('click', openClassifierForm);

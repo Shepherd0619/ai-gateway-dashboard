@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Gateway · Runtime Mappings</title>
-  <link rel="stylesheet" href="styles.css?v=20261124.1" />
+  <link rel="stylesheet" href="styles.css?v=20261128.1" />
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
@@ -74,7 +74,7 @@
               <th class="col-prefix">PREFIX</th>
               <th class="col-target">TARGET</th>
               <th class="col-backend">BACKEND</th>
-              <th class="col-proxy">PROXY</th>
+              <th class="col-proxy">PROXY FAILOVER</th>
               <th class="col-actions">ACTIONS</th>
             </tr>
           </thead>
@@ -189,9 +189,14 @@
           <p class="field-hint">Choose the named backend that receives classifier requests.</p>
         </div>
         <div class="form-field">
-          <label class="field-label" for="f-classifier-proxy">PROXY SERVER</label>
-          <select id="f-classifier-proxy" aria-label="Classifier proxy server"></select>
-          <p class="field-hint">Inherit leaves the proxy undecided; Direct explicitly disables proxy inheritance; a selected name uses that proxy.</p>
+          <label class="field-label" for="f-classifier-proxy-add">PROXY FAILOVER</label>
+          <div class="proxy-queue-editor">
+            <select id="f-classifier-proxy-add" aria-label="Add configured classifier proxy">
+              <option value="">Add configured proxy…</option>
+            </select>
+            <ol id="f-classifier-proxy-queue" class="proxy-queue" aria-label="Classifier proxy failover order"></ol>
+          </div>
+          <p class="field-hint">Choose only configured proxies. The first is preferred; later entries are tried after connection failures. An empty list uses direct connection.</p>
         </div>
         <div class="form-error" id="classifier-form-error" hidden></div>
         <div class="modal-actions">
@@ -265,9 +270,18 @@
           <p class="field-hint">Choose a named backend. If omitted by the backend, the effective default is openrouter.</p>
         </div>
         <div class="form-field">
-          <label class="field-label" for="f-proxy">PROXY SERVER</label>
-          <select id="f-proxy" name="proxyServer" aria-label="Mapping proxy server"></select>
-          <p class="field-hint">Inherit leaves the proxy undecided; Direct explicitly disables proxy inheritance; a selected name must exist in the ProxyServers configuration.</p>
+          <label class="field-label" for="f-proxy-mode">PROXY FAILOVER</label>
+          <select id="f-proxy-mode" aria-label="Mapping proxy behavior">
+            <option value="inherit">Inherit / leave unspecified</option>
+            <option value="explicit">Use this proxy list</option>
+          </select>
+          <div class="proxy-queue-editor">
+            <select id="f-proxy-add" aria-label="Add configured mapping proxy">
+              <option value="">Add configured proxy…</option>
+            </select>
+            <ol id="f-proxy-queue" class="proxy-queue" aria-label="Mapping proxy failover order"></ol>
+          </div>
+          <p class="field-hint">Choose only configured proxies. The first is preferred; later entries are tried after connection failures. Inherit leaves the setting unspecified; an empty explicit list uses direct connection.</p>
         </div>
         <div class="form-field">
           <label class="field-label" for="f-index">Position INDEX</label>
@@ -430,8 +444,8 @@
         <button class="modal-close" data-close="harden-modal" aria-label="Close">×</button>
       </div>
       <div class="harden-body">
-        <p class="harden-hint" id="harden-hint-json">Merge the exported translation fields into the corresponding existing <code>Backends</code> entries in <code>appsettings.json</code>; preserve each <code>BaseUrl</code> and all unrelated values. This snippet includes the selected gateway’s effective routing, classifier, model discovery, and backend translation settings. Dashboard edits take effect immediately and persist as runtime overrides. Redeploy the updated base configuration, then reset the backend translation runtime overrides so the new base values take effect.</p>
-        <p class="harden-hint" id="harden-hint-env" hidden>Add the exported <code>Backends__{name}__...</code> variables to the service’s existing <code>environment:</code> section; preserve existing backend settings such as <code>BaseUrl</code> and unrelated values. The snippet also includes routing, classifier, and model discovery settings. Dashboard edits take effect immediately and persist as runtime overrides. Redeploy the service, then reset the backend translation runtime overrides so the new base values take effect.</p>
+        <p class="harden-hint" id="harden-hint-json">Merge the exported translation fields into the corresponding existing <code>Backends</code> entries in <code>appsettings.json</code>; preserve each <code>BaseUrl</code> and all unrelated values. This snippet includes the selected gateway’s effective routing, classifier, model discovery, and backend translation settings. Empty mapping proxy lists use a backward-compatible value so they remain explicitly direct when loaded. Dashboard edits take effect immediately and persist as runtime overrides. Redeploy the updated base configuration, then reset the backend translation runtime overrides so the new base values take effect.</p>
+        <p class="harden-hint" id="harden-hint-env" hidden>Add the variables to the service’s existing <code>environment:</code> section and preserve unrelated values. Numbered proxy array variables merge with lower-priority configuration by index; remove prior proxy list entries from the base config and existing environment before applying changed lists. Use JSON export for reliable whole-list replacement and explicit direct mapping lists. The snippet also includes routing, classifier, and model discovery settings. Dashboard edits take effect immediately and persist as runtime overrides. Redeploy the service, then reset the backend translation runtime overrides so the new base values take effect.</p>
         <div class="seg" role="tablist" aria-label="Configuration format">
           <button type="button" class="seg-btn active" id="harden-fmt-json" aria-pressed="true">appsettings.json</button>
           <button type="button" class="seg-btn" id="harden-fmt-env" aria-pressed="false">docker-compose env</button>
@@ -512,6 +526,6 @@
   <!-- ══════════════ TOASTS ══════════════ -->
   <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
 
-  <script type="module" src="app.js?v=20261124.1"></script>
+  <script type="module" src="app.js?v=20261128.1"></script>
 </body>
 </html>
